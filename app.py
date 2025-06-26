@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 import yfinance as yf
-from pymongo import MongoClient
+from pymongo import MongoClient, ReplaceOne
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 import pandas as pd
 
@@ -188,25 +188,21 @@ def save_historical_prices_to_database(symbol: str, prices_data: List[Dict[str, 
                 'close': price_data.get('Close'),
                 'volume': price_data.get('Volume'),
                 'adj_close': price_data.get('Adj Close'),
-                'source': 'yfinance',
-                'fetched_at': datetime.utcnow()
+                'source': 'yfinance'
             }
             documents.append(document)
         
         if documents:
             # Use bulk operations for better performance
-            result = prices_collection.bulk_write([
-                {
-                    'replaceOne': {
-                        'filter': {
-                            'symbol': doc['symbol'],
-                            'date': doc['date']
-                        },
-                        'replacement': doc,
-                        'upsert': True
-                    }
-                } for doc in documents
-            ])
+            operations = [
+                ReplaceOne(
+                    {'symbol': doc['symbol'], 'date': doc['date']},
+                    doc,
+                    upsert=True
+                ) for doc in documents
+            ]
+            
+            result = prices_collection.bulk_write(operations)
             
             logger.info(f"Saved {len(documents)} historical prices for {symbol} to MongoDB")
             return True
@@ -238,7 +234,7 @@ def get_historical_prices_from_yahoo(symbol: str, start_date: str, end_date: str
         ticker = yf.Ticker(symbol.upper())
         
         # Get historical data
-        hist = ticker.history(start=start_date, end=end_date)
+        hist = ticker.history(start=start_date, end=end_date, auto_adjust=False)
         
         if hist.empty:
             logger.warning(f"No historical data received for symbol: {symbol}")
@@ -249,12 +245,12 @@ def get_historical_prices_from_yahoo(symbol: str, start_date: str, end_date: str
         for date, row in hist.iterrows():
             price_data = {
                 'Date': date.strftime('%Y-%m-%d'),
-                'Open': float(row['Open']) if not pd.isna(row['Open']) else None,
-                'High': float(row['High']) if not pd.isna(row['High']) else None,
-                'Low': float(row['Low']) if not pd.isna(row['Low']) else None,
-                'Close': float(row['Close']) if not pd.isna(row['Close']) else None,
+                'Open': round(float(row['Open']), 2) if not pd.isna(row['Open']) else None,
+                'High': round(float(row['High']), 2) if not pd.isna(row['High']) else None,
+                'Low': round(float(row['Low']), 2) if not pd.isna(row['Low']) else None,
+                'Close': round(float(row['Close']), 2) if not pd.isna(row['Close']) else None,
                 'Volume': int(row['Volume']) if not pd.isna(row['Volume']) else None,
-                'Adj Close': float(row['Adj Close']) if not pd.isna(row['Adj Close']) else None
+                'Adj Close': round(float(row['Adj Close']), 2) if not pd.isna(row['Adj Close']) else None
             }
             prices_data.append(price_data)
         
