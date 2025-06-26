@@ -6,12 +6,13 @@ A Flask application to retrieve stock information using yfinance with MongoDB st
 
 import logging
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 import yfinance as yf
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+import pandas as pd
 
 # Configure logging
 logging.basicConfig(
@@ -29,6 +30,7 @@ MONGODB_USERNAME = os.environ.get('MONGODB_USERNAME')
 MONGODB_PASSWORD = os.environ.get('MONGODB_PASSWORD')
 DB_NAME = os.environ.get('MONGODB_DB', 'epicurus-stock-io')
 COLLECTION_NAME = os.environ.get('MONGODB_COLLECTION', 'stock-info')
+PRICES_COLLECTION_NAME = os.environ.get('MONGODB_PRICES_COLLECTION', 'stock-prices')
 
 # Build MongoDB URI with credentials if provided
 if MONGODB_USERNAME and MONGODB_PASSWORD:
@@ -53,7 +55,8 @@ try:
     mongo_client.admin.command('ping')
     db = mongo_client[DB_NAME]
     collection = db[COLLECTION_NAME]
-    logger.info(f"Successfully connected to MongoDB: {DB_NAME}.{COLLECTION_NAME}")
+    prices_collection = db[PRICES_COLLECTION_NAME]
+    logger.info(f"Successfully connected to MongoDB: {DB_NAME}.{COLLECTION_NAME}, {PRICES_COLLECTION_NAME}")
     MONGODB_AVAILABLE = True
 except (ConnectionFailure, ServerSelectionTimeoutError) as e:
     logger.warning(f"MongoDB connection failed: {e}. Running without storage.")
@@ -61,6 +64,7 @@ except (ConnectionFailure, ServerSelectionTimeoutError) as e:
     mongo_client = None
     db = None
     collection = None
+    prices_collection = None
 
 def validate_symbol(symbol: str) -> bool:
     """Validate stock symbol format"""
@@ -68,6 +72,14 @@ def validate_symbol(symbol: str) -> bool:
         return False
     # Basic validation - alphanumeric and common symbols
     return symbol.replace('.', '').replace('-', '').isalnum()
+
+def validate_date_format(date_str: str) -> bool:
+    """Validate date format (YYYY-MM-DD)"""
+    try:
+        datetime.strptime(date_str, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False
 
 def get_stock_from_database(symbol: str) -> Optional[Dict[str, Any]]:
     """Retrieve stock data from MongoDB database"""
@@ -117,6 +129,93 @@ def save_stock_to_database(symbol: str, stock_data: Dict[str, Any]) -> bool:
         logger.error(f"Error saving to MongoDB database for {symbol}: {e}")
         return False
 
+def get_historical_prices_from_database(symbol: str, start_date: str, end_date: str) -> Optional[List[Dict[str, Any]]]:
+    """Retrieve historical prices from MongoDB database"""
+    if not MONGODB_AVAILABLE:
+        return None
+    
+    try:
+        # Convert date strings to datetime objects for comparison
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+        
+        # Query for prices within the date range
+        stored_prices = list(prices_collection.find({
+            'symbol': symbol.upper(),
+            'date': {
+                '$gte': start_dt,
+                '$lte': end_dt
+            }
+        }).sort('date', 1))
+        
+        if stored_prices:
+            logger.info(f"Retrieved {len(stored_prices)} historical prices for {symbol} from MongoDB")
+            # Remove MongoDB _id field from response
+            for price in stored_prices:
+                price.pop('_id', None)
+            return stored_prices
+        
+        return None
+    except Exception as e:
+        logger.error(f"Error retrieving historical prices from MongoDB for {symbol}: {e}")
+        return None
+
+def save_historical_prices_to_database(symbol: str, prices_data: List[Dict[str, Any]]) -> bool:
+    """Save historical prices to MongoDB database"""
+    if not MONGODB_AVAILABLE:
+        return False
+    
+    try:
+        # Prepare documents for MongoDB
+        documents = []
+        for price_data in prices_data:
+            # Convert date string to datetime object
+            date_str = price_data.get('Date', '')
+            if date_str:
+                try:
+                    date_dt = datetime.strptime(str(date_str).split(' ')[0], '%Y-%m-%d')
+                except:
+                    continue
+            else:
+                continue
+            
+            document = {
+                'symbol': symbol.upper(),
+                'date': date_dt,
+                'open': price_data.get('Open'),
+                'high': price_data.get('High'),
+                'low': price_data.get('Low'),
+                'close': price_data.get('Close'),
+                'volume': price_data.get('Volume'),
+                'adj_close': price_data.get('Adj Close'),
+                'source': 'yfinance',
+                'fetched_at': datetime.utcnow()
+            }
+            documents.append(document)
+        
+        if documents:
+            # Use bulk operations for better performance
+            result = prices_collection.bulk_write([
+                {
+                    'replaceOne': {
+                        'filter': {
+                            'symbol': doc['symbol'],
+                            'date': doc['date']
+                        },
+                        'replacement': doc,
+                        'upsert': True
+                    }
+                } for doc in documents
+            ])
+            
+            logger.info(f"Saved {len(documents)} historical prices for {symbol} to MongoDB")
+            return True
+        
+        return False
+    except Exception as e:
+        logger.error(f"Error saving historical prices to MongoDB for {symbol}: {e}")
+        return False
+
 def get_stock_data_from_yahoo(symbol: str) -> Optional[Dict[str, Any]]:
     """Retrieve stock data from yfinance"""
     try:
@@ -131,6 +230,38 @@ def get_stock_data_from_yahoo(symbol: str) -> Optional[Dict[str, Any]]:
         return info
     except Exception as e:
         logger.error(f"Error fetching data for {symbol}: {str(e)}")
+        return None
+
+def get_historical_prices_from_yahoo(symbol: str, start_date: str, end_date: str) -> Optional[List[Dict[str, Any]]]:
+    """Retrieve historical prices from yfinance"""
+    try:
+        ticker = yf.Ticker(symbol.upper())
+        
+        # Get historical data
+        hist = ticker.history(start=start_date, end=end_date)
+        
+        if hist.empty:
+            logger.warning(f"No historical data received for symbol: {symbol}")
+            return None
+        
+        # Convert DataFrame to list of dictionaries
+        prices_data = []
+        for date, row in hist.iterrows():
+            price_data = {
+                'Date': date.strftime('%Y-%m-%d'),
+                'Open': float(row['Open']) if not pd.isna(row['Open']) else None,
+                'High': float(row['High']) if not pd.isna(row['High']) else None,
+                'Low': float(row['Low']) if not pd.isna(row['Low']) else None,
+                'Close': float(row['Close']) if not pd.isna(row['Close']) else None,
+                'Volume': int(row['Volume']) if not pd.isna(row['Volume']) else None,
+                'Adj Close': float(row['Adj Close']) if not pd.isna(row['Adj Close']) else None
+            }
+            prices_data.append(price_data)
+        
+        logger.info(f"Retrieved {len(prices_data)} historical prices for {symbol} from Yahoo Finance")
+        return prices_data
+    except Exception as e:
+        logger.error(f"Error fetching historical data for {symbol}: {str(e)}")
         return None
 
 def get_stock_data(symbol: str) -> Optional[Dict[str, Any]]:
@@ -148,6 +279,24 @@ def get_stock_data(symbol: str) -> Optional[Dict[str, Any]]:
         # Save to database for future requests
         save_stock_to_database(symbol, yahoo_data)
         return yahoo_data
+    
+    return None
+
+def get_historical_prices(symbol: str, start_date: str, end_date: str) -> Optional[List[Dict[str, Any]]]:
+    """Get historical prices with MongoDB storage"""
+    # First, try to get from database
+    stored_prices = get_historical_prices_from_database(symbol, start_date, end_date)
+    if stored_prices:
+        return stored_prices
+    
+    # If not in database, fetch from Yahoo
+    logger.info(f"Historical prices for {symbol} not found in database, fetching from Yahoo Finance")
+    yahoo_prices = get_historical_prices_from_yahoo(symbol, start_date, end_date)
+    
+    if yahoo_prices:
+        # Save to database for future requests
+        save_historical_prices_to_database(symbol, yahoo_prices)
+        return yahoo_prices
     
     return None
 
@@ -239,6 +388,79 @@ def get_stock_price(symbol: str):
             "symbol": symbol
         }), 500
 
+@app.route('/stock/<symbol>/history')
+def get_historical_prices_endpoint(symbol: str):
+    """Get historical prices for a given symbol with date range"""
+    try:
+        # Validate symbol
+        if not validate_symbol(symbol):
+            return jsonify({
+                "error": "Invalid symbol format",
+                "symbol": symbol
+            }), 400
+        
+        # Get query parameters
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # Validate required parameters
+        if not start_date or not end_date:
+            return jsonify({
+                "error": "Missing required parameters",
+                "required": ["start_date", "end_date"],
+                "format": "YYYY-MM-DD"
+            }), 400
+        
+        # Validate date format
+        if not validate_date_format(start_date) or not validate_date_format(end_date):
+            return jsonify({
+                "error": "Invalid date format",
+                "format": "YYYY-MM-DD",
+                "received": {
+                    "start_date": start_date,
+                    "end_date": end_date
+                }
+            }), 400
+        
+        # Validate date range
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+        
+        if start_dt > end_dt:
+            return jsonify({
+                "error": "Invalid date range",
+                "start_date": start_date,
+                "end_date": end_date
+            }), 400
+        
+        logger.info(f"Fetching historical prices for {symbol} from {start_date} to {end_date}")
+        
+        # Get historical prices (with database storage)
+        prices_data = get_historical_prices(symbol, start_date, end_date)
+        
+        if prices_data is None:
+            return jsonify({
+                "error": "Unable to fetch historical prices",
+                "symbol": symbol,
+                "start_date": start_date,
+                "end_date": end_date
+            }), 404
+        
+        return jsonify({
+            "symbol": symbol.upper(),
+            "start_date": start_date,
+            "end_date": end_date,
+            "count": len(prices_data),
+            "prices": prices_data
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Unexpected error processing historical prices request for {symbol}: {str(e)}")
+        return jsonify({
+            "error": "Internal server error",
+            "symbol": symbol
+        }), 500
+
 @app.route('/database/clear/<symbol>')
 def clear_database_entry(symbol: str):
     """Remove a specific symbol from the database"""
@@ -299,20 +521,32 @@ def database_stats():
     
     try:
         total_documents = collection.count_documents({})
+        total_prices = prices_collection.count_documents({})
         latest_update = collection.find_one(
             sort=[('updated_at', -1)]
+        )
+        latest_price = prices_collection.find_one(
+            sort=[('fetched_at', -1)]
         )
         
         stats = {
             "total_symbols": total_documents,
+            "total_price_records": total_prices,
             "database": DB_NAME,
-            "collection": COLLECTION_NAME,
+            "collections": {
+                "stock_info": COLLECTION_NAME,
+                "stock_prices": PRICES_COLLECTION_NAME
+            },
             "auth_source": AUTHENTICATION_SOURCE
         }
         
         if latest_update:
             stats["latest_update"] = latest_update.get('updated_at')
             stats["latest_symbol"] = latest_update.get('symbol')
+        
+        if latest_price:
+            stats["latest_price_update"] = latest_price.get('fetched_at')
+            stats["latest_price_symbol"] = latest_price.get('symbol')
         
         return jsonify(stats), 200
     except Exception as e:
@@ -330,6 +564,7 @@ def not_found(error):
             "/health",
             "/stock/<symbol>",
             "/stock/<symbol>/price",
+            "/stock/<symbol>/history?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD",
             "/database/clear/<symbol>",
             "/database/clear",
             "/database/stats"

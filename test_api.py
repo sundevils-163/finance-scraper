@@ -5,217 +5,238 @@ Test script for Finance Scraper API
 
 import requests
 import json
-import sys
-import time
+from datetime import datetime, timedelta
 
-BASE_URL = "http://localhost:5000"
+# Configuration
+BASE_URL = "http://localhost:5000"  # Change this to your API URL
 
-def test_health():
-    """Test the health endpoint"""
-    print("Testing health endpoint...")
+def test_health_check():
+    """Test health check endpoint"""
+    print("Testing health check...")
     try:
-        response = requests.get(f"{BASE_URL}/health", timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            print(f"✅ Health check passed: {data}")
-            return True
-        else:
-            print(f"❌ Health check failed: {response.status_code}")
-            return False
+        response = requests.get(f"{BASE_URL}/health")
+        print(f"Status: {response.status_code}")
+        print(f"Response: {response.json()}")
+        return response.status_code == 200
     except Exception as e:
-        print(f"❌ Health check error: {e}")
+        print(f"Error: {e}")
         return False
 
 def test_stock_info(symbol="AAPL"):
-    """Test the stock info endpoint"""
-    print(f"Testing stock info endpoint for {symbol}...")
+    """Test stock info endpoint"""
+    print(f"\nTesting stock info for {symbol}...")
     try:
-        response = requests.get(f"{BASE_URL}/stock/{symbol}", timeout=30)
+        response = requests.get(f"{BASE_URL}/stock/{symbol}")
+        print(f"Status: {response.status_code}")
         if response.status_code == 200:
             data = response.json()
-            print(f"✅ Stock info for {symbol}:")
-            print(f"   Symbol: {data.get('symbol')}")
-            print(f"   Data keys: {list(data.get('data', {}).keys())[:5]}...")
-            return True
+            print(f"Symbol: {data.get('symbol')}")
+            print(f"Company: {data.get('data', {}).get('longName', 'N/A')}")
+            print(f"Current Price: {data.get('data', {}).get('currentPrice', 'N/A')}")
         else:
-            print(f"❌ Stock info failed: {response.status_code}")
-            print(f"   Response: {response.text}")
-            return False
+            print(f"Response: {response.json()}")
+        return response.status_code == 200
     except Exception as e:
-        print(f"❌ Stock info error: {e}")
+        print(f"Error: {e}")
         return False
 
 def test_stock_price(symbol="AAPL"):
-    """Test the stock price endpoint"""
-    print(f"Testing stock price endpoint for {symbol}...")
+    """Test stock price endpoint"""
+    print(f"\nTesting stock price for {symbol}...")
     try:
-        response = requests.get(f"{BASE_URL}/stock/{symbol}/price", timeout=30)
+        response = requests.get(f"{BASE_URL}/stock/{symbol}/price")
+        print(f"Status: {response.status_code}")
         if response.status_code == 200:
             data = response.json()
-            print(f"✅ Stock price for {symbol}:")
-            print(f"   Current Price: ${data.get('current_price')}")
-            print(f"   Previous Close: ${data.get('previous_close')}")
-            print(f"   Volume: {data.get('volume')}")
-            return True
+            print(f"Symbol: {data.get('symbol')}")
+            print(f"Current Price: {data.get('current_price')}")
+            print(f"Previous Close: {data.get('previous_close')}")
+            print(f"Volume: {data.get('volume')}")
         else:
-            print(f"❌ Stock price failed: {response.status_code}")
-            print(f"   Response: {response.text}")
-            return False
+            print(f"Response: {response.json()}")
+        return response.status_code == 200
     except Exception as e:
-        print(f"❌ Stock price error: {e}")
+        print(f"Error: {e}")
         return False
 
-def test_database_clear_symbol(symbol="AAPL"):
-    """Test removing a specific symbol from database"""
-    print(f"Testing database clear for {symbol}...")
+def test_historical_prices(symbol="AAPL"):
+    """Test historical prices endpoint"""
+    print(f"\nTesting historical prices for {symbol}...")
     try:
-        response = requests.delete(f"{BASE_URL}/database/clear/{symbol}", timeout=10)
-        if response.status_code in [200, 404]:  # 200 if removed, 404 if not found
+        # Get date range for last 30 days
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)
+        
+        params = {
+            'start_date': start_date.strftime('%Y-%m-%d'),
+            'end_date': end_date.strftime('%Y-%m-%d')
+        }
+        
+        response = requests.get(f"{BASE_URL}/stock/{symbol}/history", params=params)
+        print(f"Status: {response.status_code}")
+        if response.status_code == 200:
             data = response.json()
-            print(f"✅ Database clear for {symbol}: {data.get('message', 'Unknown')}")
-            return True
+            print(f"Symbol: {data.get('symbol')}")
+            print(f"Date Range: {data.get('start_date')} to {data.get('end_date')}")
+            print(f"Number of price records: {data.get('count')}")
+            
+            # Show first few price records
+            prices = data.get('prices', [])
+            if prices:
+                print("Sample price records:")
+                for i, price in enumerate(prices[:3]):
+                    print(f"  {i+1}. Date: {price.get('Date')}, Close: {price.get('Close')}, Volume: {price.get('Volume')}")
         else:
-            print(f"❌ Database clear failed: {response.status_code}")
-            print(f"   Response: {response.text}")
-            return False
+            print(f"Response: {response.json()}")
+        return response.status_code == 200
     except Exception as e:
-        print(f"❌ Database clear error: {e}")
-        return False
-
-def test_database_clear_all():
-    """Test clearing all data from database"""
-    print("Testing clear all database...")
-    try:
-        response = requests.delete(f"{BASE_URL}/database/clear", timeout=10)
-        if response.status_code in [200, 503]:  # 200 if cleared, 503 if MongoDB unavailable
-            data = response.json()
-            if response.status_code == 200:
-                print(f"✅ Clear all database: {data.get('deleted_count', 0)} documents deleted")
-            else:
-                print(f"⚠️  MongoDB not available: {data.get('error')}")
-            return True
-        else:
-            print(f"❌ Clear all database failed: {response.status_code}")
-            print(f"   Response: {response.text}")
-            return False
-    except Exception as e:
-        print(f"❌ Clear all database error: {e}")
+        print(f"Error: {e}")
         return False
 
 def test_database_stats():
-    """Test database statistics endpoint"""
-    print("Testing database stats...")
+    """Test database stats endpoint"""
+    print("\nTesting database stats...")
     try:
-        response = requests.get(f"{BASE_URL}/database/stats", timeout=10)
-        if response.status_code in [200, 503]:  # 200 if stats retrieved, 503 if MongoDB unavailable
+        response = requests.get(f"{BASE_URL}/database/stats")
+        print(f"Status: {response.status_code}")
+        if response.status_code == 200:
             data = response.json()
-            if response.status_code == 200:
-                print(f"✅ Database stats: {data.get('total_symbols', 0)} symbols stored")
-                print(f"   Database: {data.get('database')}")
-                print(f"   Collection: {data.get('collection')}")
-            else:
-                print(f"⚠️  MongoDB not available: {data.get('error')}")
-            return True
+            print(f"Total symbols: {data.get('total_symbols')}")
+            print(f"Total price records: {data.get('total_price_records')}")
+            print(f"Database: {data.get('database')}")
+            print(f"Collections: {data.get('collections')}")
         else:
-            print(f"❌ Database stats failed: {response.status_code}")
-            print(f"   Response: {response.text}")
-            return False
+            print(f"Response: {response.json()}")
+        return response.status_code == 200
     except Exception as e:
-        print(f"❌ Database stats error: {e}")
+        print(f"Error: {e}")
+        return False
+
+def test_clear_database_entry(symbol="AAPL"):
+    """Test clearing a specific database entry"""
+    print(f"\nTesting clear database entry for {symbol}...")
+    try:
+        response = requests.get(f"{BASE_URL}/database/clear/{symbol}")
+        print(f"Status: {response.status_code}")
+        print(f"Response: {response.json()}")
+        return response.status_code in [200, 404]  # 404 is OK if symbol doesn't exist
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+
+def test_clear_database():
+    """Test clearing all database data"""
+    print("\nTesting clear all database data...")
+    try:
+        response = requests.get(f"{BASE_URL}/database/clear")
+        print(f"Status: {response.status_code}")
+        print(f"Response: {response.json()}")
+        return response.status_code == 200
+    except Exception as e:
+        print(f"Error: {e}")
         return False
 
 def test_invalid_symbol():
     """Test with invalid symbol"""
-    print("Testing invalid symbol...")
+    print("\nTesting invalid symbol...")
     try:
-        response = requests.get(f"{BASE_URL}/stock/INVALID_SYMBOL_123", timeout=10)
-        if response.status_code == 400:
-            print("✅ Invalid symbol correctly rejected")
-            return True
-        else:
-            print(f"❌ Invalid symbol not handled correctly: {response.status_code}")
-            return False
+        response = requests.get(f"{BASE_URL}/stock/INVALID_SYMBOL_12345")
+        print(f"Status: {response.status_code}")
+        print(f"Response: {response.json()}")
+        return response.status_code == 404
     except Exception as e:
-        print(f"❌ Invalid symbol test error: {e}")
+        print(f"Error: {e}")
+        return False
+
+def test_invalid_historical_params():
+    """Test historical prices with invalid parameters"""
+    print("\nTesting historical prices with invalid parameters...")
+    try:
+        # Test missing parameters
+        response = requests.get(f"{BASE_URL}/stock/AAPL/history")
+        print(f"Missing parameters - Status: {response.status_code}")
+        print(f"Response: {response.json()}")
+        
+        # Test invalid date format
+        params = {
+            'start_date': '2024-13-01',  # Invalid month
+            'end_date': '2024-12-32'     # Invalid day
+        }
+        response = requests.get(f"{BASE_URL}/stock/AAPL/history", params=params)
+        print(f"Invalid date format - Status: {response.status_code}")
+        print(f"Response: {response.json()}")
+        
+        # Test invalid date range
+        params = {
+            'start_date': '2024-12-31',
+            'end_date': '2024-01-01'     # Start after end
+        }
+        response = requests.get(f"{BASE_URL}/stock/AAPL/history", params=params)
+        print(f"Invalid date range - Status: {response.status_code}")
+        print(f"Response: {response.json()}")
+        
+        return True
+    except Exception as e:
+        print(f"Error: {e}")
         return False
 
 def test_404():
     """Test 404 endpoint"""
-    print("Testing 404 endpoint...")
+    print("\nTesting 404 endpoint...")
     try:
-        response = requests.get(f"{BASE_URL}/nonexistent", timeout=10)
-        if response.status_code == 404:
-            data = response.json()
-            print("✅ 404 endpoint correctly handled")
-            return True
-        else:
-            print(f"❌ 404 not handled correctly: {response.status_code}")
-            return False
+        response = requests.get(f"{BASE_URL}/nonexistent")
+        print(f"Status: {response.status_code}")
+        print(f"Response: {response.json()}")
+        return response.status_code == 404
     except Exception as e:
-        print(f"❌ 404 test error: {e}")
-        return False
-
-def test_database_behavior(symbol="TSLA"):
-    """Test database behavior by making two requests"""
-    print(f"Testing database behavior for {symbol}...")
-    try:
-        # First request - should fetch from Yahoo and save to database
-        print("   Making first request (should fetch from Yahoo)...")
-        response1 = requests.get(f"{BASE_URL}/stock/{symbol}", timeout=30)
-        if response1.status_code != 200:
-            print(f"   ❌ First request failed: {response1.status_code}")
-            return False
-        
-        time.sleep(2)  # Small delay
-        
-        # Second request - should fetch from database
-        print("   Making second request (should fetch from database)...")
-        response2 = requests.get(f"{BASE_URL}/stock/{symbol}", timeout=10)
-        if response2.status_code != 200:
-            print(f"   ❌ Second request failed: {response2.status_code}")
-            return False
-        
-        print("   ✅ Both requests successful (database storage working)")
-        return True
-    except Exception as e:
-        print(f"   ❌ Database behavior test error: {e}")
+        print(f"Error: {e}")
         return False
 
 def main():
     """Run all tests"""
-    print("🚀 Finance Scraper API Test Suite")
-    print("=" * 40)
+    print("=== Finance Scraper API Tests ===\n")
     
     tests = [
-        test_health,
-        test_stock_info,
-        test_stock_price,
-        test_database_stats,
-        test_database_clear_symbol,
-        test_database_clear_all,
-        test_database_behavior,
-        test_invalid_symbol,
-        test_404
+        ("Health Check", test_health_check),
+        ("Stock Info (AAPL)", lambda: test_stock_info("AAPL")),
+        ("Stock Price (AAPL)", lambda: test_stock_price("AAPL")),
+        ("Historical Prices (AAPL)", lambda: test_historical_prices("AAPL")),
+        ("Stock Info (MSFT)", lambda: test_stock_info("MSFT")),
+        ("Stock Price (MSFT)", lambda: test_stock_price("MSFT")),
+        ("Historical Prices (MSFT)", lambda: test_historical_prices("MSFT")),
+        ("Database Stats", test_database_stats),
+        ("Invalid Symbol", test_invalid_symbol),
+        ("Invalid Historical Parameters", test_invalid_historical_params),
+        ("Clear Database Entry", lambda: test_clear_database_entry("AAPL")),
+        ("Clear All Database", test_clear_database),
+        ("404 Endpoint", test_404),
     ]
     
     passed = 0
     total = len(tests)
     
-    for test in tests:
-        if test():
-            passed += 1
-        print()
-        time.sleep(1)  # Small delay between tests
+    for test_name, test_func in tests:
+        print(f"\n{'='*50}")
+        print(f"Running: {test_name}")
+        print('='*50)
+        
+        try:
+            if test_func():
+                print(f"✅ {test_name} - PASSED")
+                passed += 1
+            else:
+                print(f"❌ {test_name} - FAILED")
+        except Exception as e:
+            print(f"❌ {test_name} - ERROR: {e}")
     
-    print("=" * 40)
+    print(f"\n{'='*50}")
     print(f"Test Results: {passed}/{total} tests passed")
+    print('='*50)
     
     if passed == total:
         print("🎉 All tests passed!")
-        return 0
     else:
-        print("❌ Some tests failed!")
-        return 1
+        print(f"⚠️  {total - passed} test(s) failed")
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    main() 

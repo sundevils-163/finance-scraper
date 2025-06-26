@@ -1,5 +1,6 @@
 Flask==2.3.3
 yfinance==0.2.63
+pymongo==4.6.0
+pandas==2.1.1
 gunicorn==21.2.0
 requests==2.31.0
-pymongo==4.6.0

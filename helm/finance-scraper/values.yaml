@@ -95,6 +95,8 @@ env:
     value: "epicurus-stock-io"
   - name: MONGODB_COLLECTION
     value: "stock-info"
+  - name: MONGODB_PRICES_COLLECTION
+    value: "stock-prices"
 
 # ConfigMap for application configuration
 configMap:
@@ -106,9 +108,8 @@ configMap:
 # Secret for sensitive data (MongoDB credentials)
 secret:
   enabled: true
-  data:
-    MONGODB_USERNAME: ""
-    MONGODB_PASSWORD: ""
+  data: {}
+
 
 # Pod disruption budget
 podDisruptionBudget:
@@ -126,4 +127,4 @@ serviceMonitor:
   enabled: false
   interval: 30s
   path: /health
-  port: http 
+  port: http

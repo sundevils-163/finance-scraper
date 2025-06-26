@@ -1,500 +1,340 @@
 # Finance Scraper API
 
-A production-ready Flask API that retrieves stock information using the yfinance library with MongoDB persistent storage. This project includes a complete Kubernetes deployment setup with Helm charts.
+A Flask-based API for retrieving stock information using Yahoo Finance (yfinance) with MongoDB persistent storage.
 
 ## Features
 
-- **Stock Information API**: Get comprehensive stock data from Yahoo Finance
-- **MongoDB Storage**: Persistent storage layer to reduce API calls and improve performance
-- **Price Endpoint**: Dedicated endpoint for current stock prices and metrics
-- **Health Checks**: Built-in health monitoring endpoints
-- **Database Management**: Endpoints to manage stored data and view statistics
-- **Production Ready**: Multi-stage Docker build with security best practices
-- **Kubernetes Native**: Complete Helm chart for easy deployment
-- **Auto-scaling**: Horizontal Pod Autoscaler for dynamic scaling
-- **Monitoring Ready**: Prometheus ServiceMonitor support
-- **Security**: Non-root execution, read-only filesystem, dropped capabilities
-- **Secret Management**: Kubernetes secrets for MongoDB credentials
-
-## Quick Start
-
-### Local Development
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Set MongoDB environment variables (optional)
-export MONGODB_URI="mongodb://username:password@localhost:27017/"
-export MONGODB_DB="epicurus-stock-io"
-export MONGODB_COLLECTION="stock-info"
-
-# Run the application
-python app.py
-
-# Test the API
-curl http://localhost:5000/health
-curl http://localhost:5000/stock/AAPL
-curl http://localhost:5000/stock/AAPL/price
-```
-
-### Docker Deployment
-
-```bash
-# Build the image
-docker build -t finance-scraper:latest .
-
-# Run the container
-docker run -p 8080:5000 finance-scraper:latest
-
-# Test the API
-curl http://localhost:8080/health
-```
-
-### Kubernetes Deployment
-
-#### 1. Create MongoDB Secret
-
-First, create the Kubernetes secret with your MongoDB credentials:
-
-```bash
-# Create the secret with your actual credentials
-kubectl create secret generic finance-scraper-mongodb-secret \
-  --from-literal=MONGODB_URI="mongodb://username:password@mongodb.lan:27017/" \
-  --from-literal=MONGODB_USERNAME="your-mongodb-username" \
-  --from-literal=MONGODB_PASSWORD="your-mongodb-password"
-```
-
-#### 2. Deploy the Application
-
-```bash
-# Use the deployment script
-./deploy.sh
-
-# Or deploy manually
-docker build -t finance-scraper:latest .
-helm install finance-scraper ./helm/finance-scraper
-
-# Port forward to access the service
-kubectl port-forward deployment/finance-scraper 8080:5000
-```
+- **Stock Information**: Retrieve comprehensive stock data for any symbol
+- **Current Price**: Get current stock price and basic market data
+- **Historical Prices**: Retrieve historical price data with date range filtering
+- **MongoDB Storage**: Persistent storage of stock data and historical prices
+- **Database Management**: Clear specific symbols or all data from database
+- **Health Monitoring**: Health check endpoint for monitoring
+- **Kubernetes Ready**: Complete Helm chart for Kubernetes deployment
 
 ## API Endpoints
 
 ### Health Check
-```http
+```
 GET /health
 ```
+Returns the health status of the API and MongoDB connection.
 
-**Response:**
-```json
-{
-  "status": "healthy",
-  "service": "finance-scraper-api",
-  "mongodb": "connected"
-}
+### Stock Information
 ```
-
-### Stock Information (with storage)
-```http
 GET /stock/{symbol}
 ```
+Retrieves comprehensive stock information for a given symbol.
 
 **Example:**
 ```bash
 curl http://localhost:5000/stock/AAPL
 ```
 
-**Response:**
-```json
-{
-  "symbol": "AAPL",
-  "data": {
-    "currentPrice": 150.25,
-    "previousClose": 148.50,
-    "open": 149.00,
-    "dayHigh": 152.00,
-    "dayLow": 148.25,
-    "volume": 12345678,
-    "marketCap": 2500000000000,
-    "currency": "USD",
-    // ... more fields
-  }
-}
+### Current Stock Price
 ```
-
-### Stock Price (with storage)
-```http
 GET /stock/{symbol}/price
 ```
+Retrieves current price and basic market data for a given symbol.
 
 **Example:**
 ```bash
 curl http://localhost:5000/stock/AAPL/price
 ```
 
+### Historical Prices
+```
+GET /stock/{symbol}/history?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+```
+Retrieves historical price data for a given symbol within a specified date range.
+
+**Parameters:**
+- `start_date`: Start date in YYYY-MM-DD format
+- `end_date`: End date in YYYY-MM-DD format
+
+**Example:**
+```bash
+curl "http://localhost:5000/stock/AAPL/history?start_date=2024-01-01&end_date=2024-01-31"
+```
+
 **Response:**
 ```json
 {
   "symbol": "AAPL",
-  "current_price": 150.25,
-  "previous_close": 148.50,
-  "open": 149.00,
-  "day_high": 152.00,
-  "day_low": 148.25,
-  "volume": 12345678,
-  "market_cap": 2500000000000,
-  "currency": "USD"
+  "start_date": "2024-01-01",
+  "end_date": "2024-01-31",
+  "count": 22,
+  "prices": [
+    {
+      "Date": "2024-01-02",
+      "Open": 185.59,
+      "High": 186.12,
+      "Low": 183.62,
+      "Close": 185.14,
+      "Volume": 52455980,
+      "Adj Close": 185.14
+    }
+  ]
 }
 ```
 
 ### Database Management
 
 #### Database Statistics
-```http
+```
 GET /database/stats
 ```
+Returns statistics about the database including total symbols and price records stored.
 
-**Example:**
-```bash
-curl http://localhost:5000/database/stats
+#### Clear Specific Symbol
 ```
-
-**Response:**
-```json
-{
-  "total_symbols": 15,
-  "database": "epicurus-stock-io",
-  "collection": "stock-info",
-  "latest_update": "2024-01-15T10:30:00Z",
-  "latest_symbol": "AAPL"
-}
+GET /database/clear/{symbol}
 ```
-
-#### Remove Specific Symbol
-```http
-DELETE /database/clear/{symbol}
-```
-
-**Example:**
-```bash
-curl -X DELETE http://localhost:5000/database/clear/AAPL
-```
-
-**Response:**
-```json
-{
-  "message": "Symbol removed from database successfully",
-  "symbol": "AAPL"
-}
-```
+Removes a specific symbol from the database.
 
 #### Clear All Data
-```http
-DELETE /database/clear
 ```
+GET /database/clear
+```
+Removes all data from the database.
 
-**Example:**
+## MongoDB Collections
+
+The API uses two MongoDB collections:
+
+1. **stock-info**: Stores comprehensive stock information
+   - Document structure includes symbol, data, updated_at, source, and last_fetched fields
+
+2. **stock-prices**: Stores historical price data
+   - Document structure includes symbol, date, open, high, low, close, volume, adj_close, source, and fetched_at fields
+
+## Data Flow
+
+1. **Stock Information**: 
+   - First checks MongoDB for existing data
+   - If not found, fetches from Yahoo Finance and saves to MongoDB
+   - Returns cached data for subsequent requests
+
+2. **Historical Prices**:
+   - First checks MongoDB for existing price data within the date range
+   - If not found, fetches from Yahoo Finance and saves to MongoDB
+   - Returns cached data for subsequent requests
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MONGODB_URI` | MongoDB connection URI | `mongodb://mongodb.lan:27017/` |
+| `MONGODB_DB` | Database name | `epicurus-stock-io` |
+| `MONGODB_COLLECTION` | Stock info collection name | `stock-info` |
+| `MONGODB_PRICES_COLLECTION` | Stock prices collection name | `stock-prices` |
+| `AUTHENTICATION_SOURCE` | MongoDB authentication source | `epicurus-stock-io` |
+| `MONGODB_USERNAME` | MongoDB username | - |
+| `MONGODB_PASSWORD` | MongoDB password | - |
+| `PORT` | Application port | `5000` |
+| `FLASK_ENV` | Flask environment | - |
+
+## Local Development
+
+### Prerequisites
+- Python 3.8+
+- MongoDB instance (optional for development)
+
+### Installation
+
+1. Clone the repository:
 ```bash
-curl -X DELETE http://localhost:5000/database/clear
+git clone <repository-url>
+cd finance-scraper
 ```
 
-**Response:**
-```json
-{
-  "message": "All data cleared from database successfully",
-  "deleted_count": 15
-}
-```
-
-## MongoDB Storage
-
-The application implements persistent storage using MongoDB:
-
-### How it works:
-1. **First Request** for `AAPL`:
-   - Check MongoDB for existing data
-   - If not found → fetch from Yahoo Finance
-   - Save to MongoDB with timestamp
-   - Return data
-
-2. **Subsequent Requests** for `AAPL`:
-   - Check MongoDB for existing data
-   - If found → return stored data instantly
-   - No Yahoo Finance API call needed
-
-### Storage Configuration:
-- **Database**: `epicurus-stock-io`
-- **Collection**: `stock-info`
-- **Connection**: `mongodb.lan:27017` (with authentication)
-- **Credentials**: Stored in Kubernetes secrets
-
-### Environment Variables:
-- `MONGODB_URI`: MongoDB connection string (from secret)
-- `MONGODB_USERNAME`: MongoDB username (from secret)
-- `MONGODB_PASSWORD`: MongoDB password (from secret)
-- `MONGODB_DB`: Database name
-- `MONGODB_COLLECTION`: Collection name
-
-### Benefits:
-- ✅ **Faster Response Times**: Stored data returns instantly
-- ✅ **Reduced API Calls**: Fewer requests to Yahoo Finance
-- ✅ **Persistent Storage**: Data survives pod restarts
-- ✅ **Better Reliability**: Graceful fallback if MongoDB is unavailable
-- ✅ **Data Analytics**: Stored data can be used for other purposes
-
-## Project Structure
-
-```
-finance-scraper/
-├── app.py                 # Main Flask application with MongoDB storage
-├── requirements.txt       # Python dependencies including pymongo
-├── Dockerfile            # Multi-stage Docker build
-├── .dockerignore         # Docker build exclusions
-├── deploy.sh             # Deployment automation script
-├── test_api.py           # Comprehensive API testing
-├── Makefile              # Development and deployment commands
-├── README.md             # This file
-└── helm/
-    └── finance-scraper/  # Helm chart
-        ├── Chart.yaml
-        ├── values.yaml
-        ├── README.md
-        ├── templates/
-        │   ├── deployment.yaml
-        │   ├── service.yaml
-        │   ├── ingress.yaml
-        │   ├── hpa.yaml
-        │   ├── pdb.yaml
-        │   ├── configmap.yaml
-        │   ├── secret.yaml
-        │   ├── servicemonitor.yaml
-        │   ├── networkpolicy.yaml
-        │   ├── _helpers.tpl
-        │   └── NOTES.txt
-        └── secret-example.yaml  # Example secret manifest
-```
-
-## Configuration
-
-### Environment Variables
-
-- `PORT`: Application port (default: 5000)
-- `FLASK_ENV`: Environment mode (development/production)
-- `MONGODB_URI`: MongoDB connection string (from secret)
-- `MONGODB_USERNAME`: MongoDB username (from secret)
-- `MONGODB_PASSWORD`: MongoDB password (from secret)
-- `MONGODB_DB`: Database name (default: epicurus-stock-io)
-- `MONGODB_COLLECTION`: Collection name (default: stock-info)
-
-### Helm Values
-
-The Helm chart supports extensive customization through `values.yaml`:
-
-```yaml
-# Basic configuration
-replicaCount: 2
-image:
-  repository: finance-scraper
-  tag: "latest"
-
-# MongoDB configuration (non-sensitive)
-env:
-  - name: MONGODB_DB
-    value: "epicurus-stock-io"
-  - name: MONGODB_COLLECTION
-    value: "stock-info"
-
-# Service configuration
-service:
-  type: ClusterIP
-  port: 80
-
-# Ingress configuration
-ingress:
-  enabled: true
-  className: "nginx"
-
-# Resource limits
-resources:
-  limits:
-    cpu: 500m
-    memory: 512Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
-
-# Auto-scaling
-autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 10
-```
-
-### Kubernetes Secret Setup
-
-The application expects a secret named `finance-scraper-mongodb-secret` with the following keys:
-
+2. Install dependencies:
 ```bash
-# Create the secret
-kubectl create secret generic finance-scraper-mongodb-secret \
-  --from-literal=MONGODB_URI="mongodb://username:password@mongodb.lan:27017/" \
-  --from-literal=MONGODB_USERNAME="your-username" \
-  --from-literal=MONGODB_PASSWORD="your-password"
+pip install -r requirements.txt
 ```
 
-## Security Features
-
-- **Non-root execution**: Application runs as non-root user
-- **Read-only filesystem**: Container filesystem is read-only
-- **Dropped capabilities**: All Linux capabilities are dropped
-- **Pod security context**: Kubernetes security policies applied
-- **Network policies**: Optional network isolation
-- **Input validation**: Symbol validation and sanitization
-- **Secret management**: MongoDB credentials stored in Kubernetes secrets
-
-## Monitoring
-
-### Health Checks
-
-- **Liveness probe**: `/health` endpoint
-- **Readiness probe**: `/health` endpoint
-- **Docker health check**: Built into container
-- **MongoDB status**: Included in health check response
-
-### Prometheus Integration
-
-Enable ServiceMonitor in values.yaml:
-
-```yaml
-serviceMonitor:
-  enabled: true
-  interval: 30s
-  path: /health
-  port: http
-```
-
-## Scaling
-
-### Horizontal Pod Autoscaler
-
-The application includes an HPA that scales based on CPU and memory utilization:
-
-```yaml
-autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 80
-  targetMemoryUtilizationPercentage: 80
-```
-
-### Manual Scaling
-
+3. Set environment variables (optional):
 ```bash
-# Scale to 5 replicas
-kubectl scale deployment finance-scraper --replicas=5
-
-# Or using Helm
-helm upgrade finance-scraper ./helm/finance-scraper --set replicaCount=5
+export MONGODB_URI="mongodb://localhost:27017/"
+export MONGODB_DB="finance_db"
 ```
 
-## Troubleshooting
-
-### Check Application Status
-
+4. Run the application:
 ```bash
-# Check pods
-kubectl get pods -l app.kubernetes.io/name=finance-scraper
-
-# Check logs
-kubectl logs -l app.kubernetes.io/name=finance-scraper
-
-# Check service
-kubectl get svc finance-scraper
+python app.py
 ```
 
-### MongoDB Issues
-
-```bash
-# Check MongoDB connection
-curl http://localhost:5000/health
-
-# Check database stats
-curl http://localhost:5000/database/stats
-
-# Clear data if needed
-curl -X DELETE http://localhost:5000/database/clear
-
-# Remove specific symbol
-curl -X DELETE http://localhost:5000/database/clear/AAPL
-```
-
-### Secret Issues
-
-```bash
-# Check if secret exists
-kubectl get secret finance-scraper-mongodb-secret
-
-# View secret details (base64 encoded)
-kubectl get secret finance-scraper-mongodb-secret -o yaml
-
-# Recreate secret if needed
-kubectl delete secret finance-scraper-mongodb-secret
-kubectl create secret generic finance-scraper-mongodb-secret \
-  --from-literal=MONGODB_URI="mongodb://username:password@mongodb.lan:27017/" \
-  --from-literal=MONGODB_USERNAME="your-username" \
-  --from-literal=MONGODB_PASSWORD="your-password"
-```
-
-### Common Issues
-
-1. **MongoDB connection errors**: Check if MongoDB is accessible and credentials are correct
-2. **Secret not found**: Ensure the secret `finance-scraper-mongodb-secret` exists
-3. **Authentication failures**: Verify MongoDB username and password
-4. **Image pull errors**: Ensure the Docker image is built and available
-5. **Health check failures**: Check if the application is starting correctly
-6. **Resource constraints**: Monitor CPU and memory usage
-
-## Development
-
-### Adding New Endpoints
-
-1. Add the route in `app.py`
-2. Include proper error handling and logging
-3. Add input validation
-4. Update the API documentation
+The API will be available at `http://localhost:5000`
 
 ### Testing
 
+Run the test suite:
 ```bash
-# Run the application
-python app.py
-
-# Run comprehensive tests
 python test_api.py
-
-# Test specific endpoints
-curl http://localhost:5000/health
-curl http://localhost:5000/stock/AAPL
-curl http://localhost:5000/database/stats
 ```
+
+## Docker Deployment
+
+### Build the image:
+```bash
+docker build -t finance-scraper .
+```
+
+### Run the container:
+```bash
+docker run -p 5000:5000 \
+  -e MONGODB_URI="mongodb://your-mongodb-host:27017/" \
+  -e MONGODB_USERNAME="your-username" \
+  -e MONGODB_PASSWORD="your-password" \
+  finance-scraper
+```
+
+## Kubernetes Deployment
+
+### Prerequisites
+- Kubernetes cluster
+- Helm 3.x
+- MongoDB instance
+
+### Deploy with Helm
+
+1. Create a values file (`my-values.yaml`):
+```yaml
+mongodb:
+  uri: "mongodb://your-mongodb-host:27017/"
+  db: "finance_db"
+  collection: "stock-info"
+  prices_collection: "stock-prices"
+  authentication_source: "admin"
+  username: "your-username"
+  password: "your-password"
+
+ingress:
+  enabled: true
+  hosts:
+    - host: finance-api.your-domain.com
+      paths:
+        - path: /
+          pathType: Prefix
+```
+
+2. Create the MongoDB secret:
+```bash
+kubectl create secret generic finance-scraper-secret \
+  --from-literal=MONGODB_USERNAME=your-username \
+  --from-literal=MONGODB_PASSWORD=your-password
+```
+
+3. Deploy the application:
+```bash
+helm install finance-scraper ./helm/finance-scraper -f my-values.yaml
+```
+
+### Using the Makefile
+
+```bash
+# Build and deploy
+make deploy
+
+# Update deployment
+make upgrade
+
+# Remove deployment
+make uninstall
+
+# View logs
+make logs
+
+# Test the API
+make test
+```
+
+## API Response Examples
+
+### Stock Information Response
+```json
+{
+  "symbol": "AAPL",
+  "data": {
+    "longName": "Apple Inc.",
+    "currentPrice": 185.14,
+    "previousClose": 185.64,
+    "open": 185.59,
+    "dayHigh": 186.12,
+    "dayLow": 183.62,
+    "volume": 52455980,
+    "marketCap": 2890000000000,
+    "currency": "USD"
+  }
+}
+```
+
+### Current Price Response
+```json
+{
+  "symbol": "AAPL",
+  "current_price": 185.14,
+  "previous_close": 185.64,
+  "open": 185.59,
+  "day_high": 186.12,
+  "day_low": 183.62,
+  "volume": 52455980,
+  "market_cap": 2890000000000,
+  "currency": "USD"
+}
+```
+
+### Database Stats Response
+```json
+{
+  "total_symbols": 5,
+  "total_price_records": 1250,
+  "database": "epicurus-stock-io",
+  "collections": {
+    "stock_info": "stock-info",
+    "stock_prices": "stock-prices"
+  },
+  "auth_source": "epicurus-stock-io",
+  "latest_update": "2024-01-15T10:30:00Z",
+  "latest_symbol": "AAPL",
+  "latest_price_update": "2024-01-15T10:25:00Z",
+  "latest_price_symbol": "AAPL"
+}
+```
+
+## Error Handling
+
+The API provides comprehensive error handling:
+
+- **400 Bad Request**: Invalid symbol format or missing required parameters
+- **404 Not Found**: Symbol not found or no data available
+- **500 Internal Server Error**: Unexpected server errors
+- **503 Service Unavailable**: MongoDB connection issues
+
+## Monitoring
+
+The application includes:
+- Structured logging with timestamps
+- Health check endpoint for monitoring
+- Database statistics for operational insights
+- Error tracking and reporting
+
+## Security Considerations
+
+- Non-root container execution
+- Environment variable-based configuration
+- Kubernetes secrets for sensitive data
+- Input validation and sanitization
+- Error message sanitization
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test thoroughly
+4. Add tests for new functionality
 5. Submit a pull request
 
 ## License
 
-This project is licensed under the MIT License.
-
-## Support
-
-For issues and questions:
-- Create an issue in the repository
-- Check the troubleshooting section
-- Review the Helm chart documentation 
+This project is licensed under the MIT License. 
