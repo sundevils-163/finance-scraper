@@ -1,0 +1,129 @@
+# Default values for finance-scraper
+# This is a YAML-formatted file.
+
+replicaCount: 2
+
+image:
+  repository: finance-scraper
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 5000
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations: {}
+  hosts:
+    - host: finance-scraper.lan
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - finance-scraper
+          topologyKey: kubernetes.io/hostname
+
+# Environment variables
+env:
+  - name: FLASK_ENV
+    value: "production"
+  - name: PORT
+    value: "5000"
+  - name: MONGODB_DB
+    value: "epicurus-stock-io"
+  - name: MONGODB_COLLECTION
+    value: "stock-info"
+
+# ConfigMap for application configuration
+configMap:
+  enabled: true
+  data:
+    MONGODB_URI: "mongodb://mongodb.lan:27017/"
+    AUTHENTICATION_SOURCE: "epicurus-stock-io"
+
+# Secret for sensitive data (MongoDB credentials)
+secret:
+  enabled: true
+  data:
+    MONGODB_USERNAME: "appadmin"
+    MONGODB_PASSWORD: "dallas11"
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Network policies
+networkPolicy:
+  enabled: false
+  ingressRules: []
+  egressRules: []
+
+# Service monitor for Prometheus
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  path: /health
+  port: http 

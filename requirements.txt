@@ -1,0 +1,5 @@
+Flask==2.3.3
+yfinance==0.2.63
+gunicorn==21.2.0
+requests==2.31.0
+pymongo==4.6.0
