@@ -1,3 +1,5 @@
 # Ignore macOS specific files
 */.DS_Store
 .DS_Store
+
+/helm/finance-scraper/templates/secrets.yaml
