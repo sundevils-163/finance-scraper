@@ -107,8 +107,8 @@ configMap:
 secret:
   enabled: true
   data:
-    MONGODB_USERNAME: "appadmin"
-    MONGODB_PASSWORD: "dallas11"
+    MONGODB_USERNAME: ""
+    MONGODB_PASSWORD: ""
 
 # Pod disruption budget
 podDisruptionBudget:
