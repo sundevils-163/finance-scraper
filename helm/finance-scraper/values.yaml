@@ -85,18 +85,44 @@ affinity:
                   - finance-scraper
           topologyKey: kubernetes.io/hostname
 
-# Environment variables
+# Shared environment variables for both API and scheduler
 env:
+  # API-specific variables
   - name: FLASK_ENV
     value: "production"
   - name: PORT
     value: "5000"
+  
+  # MongoDB configuration (shared)
   - name: MONGODB_DB
     value: "epicurus-stock-io"
   - name: MONGODB_COLLECTION
     value: "stock-info"
   - name: MONGODB_PRICES_COLLECTION
     value: "stock-prices"
+  
+
+
+
+
+# Scheduler deployment configuration
+scheduler:
+  enabled: true  # Enable standalone scheduler deployment
+  replicaCount: 1
+  image:
+    repository: finance-scraper-scheduler
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+
 
 # ConfigMap for application configuration
 configMap:

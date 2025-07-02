@@ -10,6 +10,7 @@ A Flask-based API for retrieving stock information using Yahoo Finance (yfinance
 - **MongoDB Storage**: Persistent storage of stock data and historical prices
 - **Database Management**: Clear specific symbols or all data from database
 - **Health Monitoring**: Health check endpoint for monitoring
+- **Automated Scheduler**: Cron-style job for automated data retrieval (see [SCHEDULER_README.md](SCHEDULER_README.md))
 - **Kubernetes Ready**: Complete Helm chart for Kubernetes deployment
 
 ## API Endpoints
@@ -133,6 +134,12 @@ The API uses two MongoDB collections:
 | `MONGODB_PASSWORD` | MongoDB password | - |
 | `PORT` | Application port | `5000` |
 | `FLASK_ENV` | Flask environment | - |
+| `ENABLE_SCHEDULER` | Enable automated scheduler | `false` |
+| `SCHEDULER_FREQUENCY_HOURS` | Scheduler run frequency (hours) | `24` |
+| `SYMBOL_FREQUENCY_HOURS` | Symbol update frequency (hours) | `24` |
+| `MAX_SYMBOLS_PER_RUN` | Max symbols processed per cycle | `50` |
+| `RATE_LIMIT_DELAY_SECONDS` | Delay between API calls | `1.0` |
+| `INITIAL_START_DAYS_BACK` | Days back to start when no historical data | `365` |
 
 ## Local Development
 
@@ -166,11 +173,50 @@ python app.py
 
 The API will be available at `http://localhost:5000`
 
+### Running with Scheduler
+
+To enable the automated scheduler:
+
+```bash
+export ENABLE_SCHEDULER=true
+export SCHEDULER_FREQUENCY_HOURS=24
+export SYMBOL_FREQUENCY_HOURS=24
+export INITIAL_START_DAYS_BACK=730  # Start from 2 years ago for new symbols
+python app.py
+```
+
+For detailed scheduler documentation, see [SCHEDULER_README.md](SCHEDULER_README.md).
+
+### Kubernetes Deployment Options
+
+The Helm chart supports multiple deployment modes:
+
+1. **API Only** (Default): `helm install finance-scraper ./helm/finance-scraper`
+   - Only the API service runs
+   - No scheduler functionality
+
+2. **API with Integrated Scheduler**: `helm install finance-scraper ./helm/finance-scraper --set env[0].value=true`
+   - Scheduler runs in the same pod as the API
+   - Use API endpoints to control scheduler
+
+3. **API + Standalone Scheduler**: `helm install finance-scraper ./helm/finance-scraper --set scheduler.enabled=true`
+   - API and scheduler run in separate pods
+   - Scheduler runs independently, API endpoints don't control it
+
+4. **Standalone Scheduler Only**: `helm install finance-scraper ./helm/finance-scraper --set scheduler.enabled=true --set replicaCount=0`
+   - Only scheduler runs, no API service
+   - Useful for dedicated scheduler deployments
+
 ### Testing
 
 Run the test suite:
 ```bash
 python test_api.py
+```
+
+Run the scheduler tests:
+```bash
+python test_scheduler.py
 ```
 
 ## Docker Deployment

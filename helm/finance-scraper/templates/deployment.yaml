@@ -60,6 +60,13 @@ spec:
             - name: {{ .name }}
               value: {{ .value | quote }}
             {{- end }}
+            # Scheduler API connection when scheduler is enabled
+            {{- if .Values.scheduler.enabled }}
+            - name: SCHEDULER_API_HOST
+              value: "{{ include "finance-scraper.fullname" . }}-scheduler"
+            - name: SCHEDULER_API_PORT
+              value: "5001"
+            {{- end }}
             {{- if .Values.configMap.enabled }}
             {{- range $key, $value := .Values.configMap.data }}
             - name: {{ $key }}

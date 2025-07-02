@@ -28,8 +28,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Set working directory
 WORKDIR /app
 
-# Copy application code (API only)
-COPY app.py .
+# Copy application code (Scheduler with API)
+COPY scheduler.py .
+COPY scheduler_service.py .
 
 # Change ownership to non-root user
 RUN chown -R appuser:appuser /app
@@ -37,12 +38,12 @@ RUN chown -R appuser:appuser /app
 # Switch to non-root user
 USER appuser
 
-# Expose port
-EXPOSE 5000
+# Expose port for scheduler API
+EXPOSE 5001
 
-# Health check
+# Health check for scheduler API
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:5000/health')" || exit 1
+    CMD python -c "import requests; requests.get('http://localhost:5001/health')" || exit 1
 
-# Run with gunicorn for production (API only)
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "app:app"]
+# Run scheduler service with API
+CMD ["python", "scheduler_service.py"] 

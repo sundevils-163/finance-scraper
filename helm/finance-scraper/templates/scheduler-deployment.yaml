@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "finance-scraper.fullname" . }}-scheduler
+  labels:
+    {{- include "finance-scraper.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduler
+spec:
+  replicas: {{ .Values.scheduler.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "finance-scraper.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scheduler
+  template:
+    metadata:
+      labels:
+        {{- include "finance-scraper.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: scheduler
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "finance-scraper.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}-scheduler
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.scheduler.image.repository }}:{{ .Values.scheduler.image.tag }}"
+          imagePullPolicy: {{ .Values.scheduler.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 5001
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          env:
+            {{- if .Values.configMap.enabled }}
+            - name: MONGODB_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "finance-scraper.fullname" . }}
+                  key: MONGODB_URI
+            - name: AUTHENTICATION_SOURCE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "finance-scraper.fullname" . }}
+                  key: AUTHENTICATION_SOURCE
+            {{- end }}
+            {{- if .Values.secret.enabled }}
+            {{- if .Values.secret.data.MONGODB_USERNAME }}
+            - name: MONGODB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "finance-scraper.fullname" . }}
+                  key: MONGODB_USERNAME
+            {{- end }}
+            {{- if .Values.secret.data.MONGODB_PASSWORD }}
+            - name: MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "finance-scraper.fullname" . }}
+                  key: MONGODB_PASSWORD
+            {{- end }}
+            {{- end }}
+            # Use shared environment variables (excluding API-specific ones)
+            {{- range .Values.env }}
+            {{- if not (or (eq .name "FLASK_ENV") (eq .name "PORT")) }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- end }}
+            # Scheduler-specific environment variables
+            - name: SCHEDULER_FREQUENCY_HOURS
+              value: "24"
+            - name: SYMBOL_FREQUENCY_HOURS
+              value: "24"
+            - name: MAX_SYMBOLS_PER_RUN
+              value: "50"
+            - name: RATE_LIMIT_DELAY_SECONDS
+              value: "1.0"
+            - name: JITTER_SECONDS
+              value: "0.5"
+            - name: MAX_RETRIES
+              value: "3"
+            - name: RETRY_DELAY_SECONDS
+              value: "5.0"
+            - name: INITIAL_START_DAYS_BACK
+              value: "365"
+            - name: PORT
+              value: "5001"
+            - name: FLASK_ENV
+              value: "production"
+          resources:
+            {{- toYaml .Values.scheduler.resources | nindent 12 }}
+          {{- if .Values.scheduler.livenessProbe }}
+          livenessProbe:
+            {{- toYaml .Values.scheduler.livenessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.scheduler.readinessProbe }}
+          readinessProbe:
+            {{- toYaml .Values.scheduler.readinessProbe | nindent 12 }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

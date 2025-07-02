@@ -551,6 +551,88 @@ def database_stats():
             "error": "Internal server error"
         }), 500
 
+
+def get_scheduler_api_url():
+    """Get the scheduler API URL"""
+    scheduler_host = os.environ.get('SCHEDULER_API_HOST', 'finance-scraper-scheduler')
+    scheduler_port = os.environ.get('SCHEDULER_API_PORT', '5001')
+    return f"http://{scheduler_host}:{scheduler_port}"
+
+def call_scheduler_api(endpoint, method='GET', data=None):
+    """Make a call to the scheduler API"""
+    try:
+        import requests
+        url = f"{get_scheduler_api_url()}{endpoint}"
+        
+        if method == 'GET':
+            response = requests.get(url, timeout=10)
+        elif method == 'POST':
+            response = requests.post(url, json=data, timeout=10)
+        else:
+            return None, "Unsupported method"
+        
+        return response.json(), response.status_code
+    except Exception as e:
+        logger.error(f"Error calling scheduler API: {e}")
+        return None, 500
+
+
+
+@app.route('/scheduler/status')
+def scheduler_status():
+    """Get scheduler status"""
+    # API pod always communicates with scheduler API
+    response_data, status_code = call_scheduler_api('/status')
+    
+    if response_data:
+        response_data['mode'] = 'separate'
+        return jsonify(response_data), status_code
+    else:
+        return jsonify({
+            "status": "error",
+            "message": "Cannot connect to scheduler API",
+            "mode": "separate"
+        }), 500
+
+@app.route('/scheduler/start', methods=['POST'])
+def start_scheduler():
+    """Start the scheduler"""
+    # API pod always communicates with scheduler API
+    response_data, status_code = call_scheduler_api('/start', method='POST')
+    
+    if response_data:
+        return jsonify(response_data), status_code
+    else:
+        return jsonify({
+            "error": "Cannot connect to scheduler API"
+        }), 500
+
+@app.route('/scheduler/stop', methods=['POST'])
+def stop_scheduler():
+    """Stop the scheduler"""
+    # API pod always communicates with scheduler API
+    response_data, status_code = call_scheduler_api('/stop', method='POST')
+    
+    if response_data:
+        return jsonify(response_data), status_code
+    else:
+        return jsonify({
+            "error": "Cannot connect to scheduler API"
+        }), 500
+
+@app.route('/scheduler/run-now', methods=['POST'])
+def run_scheduler_now():
+    """Run scheduler cycle immediately"""
+    # API pod always communicates with scheduler API
+    response_data, status_code = call_scheduler_api('/run-now', method='POST')
+    
+    if response_data:
+        return jsonify(response_data), status_code
+    else:
+        return jsonify({
+            "error": "Cannot connect to scheduler API"
+        }), 500
+
 @app.errorhandler(404)
 def not_found(error):
     """Handle 404 errors"""
@@ -563,7 +645,11 @@ def not_found(error):
             "/stock/<symbol>/history?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD",
             "/database/clear/<symbol>",
             "/database/clear",
-            "/database/stats"
+            "/database/stats",
+            "/scheduler/status",
+            "/scheduler/start (POST)",
+            "/scheduler/stop (POST)",
+            "/scheduler/run-now (POST)"
         ]
     }), 404
 
@@ -578,5 +664,22 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
     
+    # Initialize scheduler if enabled
+    if os.environ.get('ENABLE_SCHEDULER', 'false').lower() == 'true':
+        try:
+            from scheduler import create_scheduler_from_env
+            _scheduler = create_scheduler_from_env()
+            _scheduler.start()
+            logger.info("Scheduler started successfully")
+        except Exception as e:
+            logger.error(f"Failed to start scheduler: {e}")
+    
     logger.info(f"Starting Finance Scraper API on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    
+    try:
+        app.run(host='0.0.0.0', port=port, debug=debug)
+    except KeyboardInterrupt:
+        logger.info("Received interrupt signal")
+        if '_scheduler' in globals():
+            _scheduler.stop()
+        logger.info("Application stopped")
