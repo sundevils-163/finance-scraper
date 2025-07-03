@@ -50,7 +50,7 @@ class SchedulerConfig:
     # Historical data configuration
     initial_start_date: str = "2020-01-01"  # Initial start date (YYYY-MM-DD) when no historical data exists
     download_chunk_days: int = 365  # Number of days to download per chunk
-    download_chunk_delay_minutes: int = 10  # Minutes to wait between chunks for same symbol
+    download_chunk_delay_seconds: int = 60  # Seconds to wait between chunks for same symbol
 
 class StockScheduler:
     """Main scheduler class for automated stock data retrieval"""
@@ -276,11 +276,11 @@ class StockScheduler:
                 
                 # Wait between chunks (except for the last chunk)
                 if current_start_date < end_date:
-                    delay_minutes = self.config.download_chunk_delay_minutes
-                    logger.info(f"Waiting {delay_minutes} minutes before next chunk for {symbol}")
+                    delay_seconds = self.config.download_chunk_delay_seconds
+                    logger.info(f"Waiting {delay_seconds} seconds before next chunk for {symbol}")
                     
                     # Wait in smaller intervals to allow for stop event
-                    for _ in range(delay_minutes * 60):
+                    for _ in range(delay_seconds):
                         if self.stop_event.is_set():
                             logger.info(f"Stop event received, interrupting historical price update for {symbol}")
                             return True
@@ -425,7 +425,7 @@ def create_scheduler_from_env() -> StockScheduler:
         retry_delay_seconds=float(os.environ.get('RETRY_DELAY_SECONDS', '5.0')),
         initial_start_date=os.environ.get('INITIAL_START_DATE', '2020-01-01'),
         download_chunk_days=int(os.environ.get('DOWNLOAD_CHUNK_DAYS', '365')),
-        download_chunk_delay_minutes=int(os.environ.get('DOWNLOAD_CHUNK_DELAY_MINUTES', '10'))
+        download_chunk_delay_seconds=int(os.environ.get('DOWNLOAD_CHUNK_DELAY_SECONDS', '60'))
     )
     
     return StockScheduler(config)

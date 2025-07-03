@@ -165,7 +165,7 @@ def get_config():
             "retry_delay_seconds": scheduler.config.retry_delay_seconds,
             "initial_start_date": scheduler.config.initial_start_date,
             "download_chunk_days": scheduler.config.download_chunk_days,
-            "download_chunk_delay_minutes": scheduler.config.download_chunk_delay_minutes
+            "download_chunk_delay_seconds": scheduler.config.download_chunk_delay_seconds
         }
     }), 200
 

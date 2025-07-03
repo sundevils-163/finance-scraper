@@ -61,7 +61,7 @@ All environment variables are defined in a single `env` section in `values.yaml`
 - `RETRY_DELAY_SECONDS`: Delay between retries (default: `5.0`)
 - `INITIAL_START_DATE`: Initial start date (YYYY-MM-DD) when no historical data exists (default: `2020-01-01`)
 - `DOWNLOAD_CHUNK_DAYS`: Number of days to download per chunk (default: `365`)
-- `DOWNLOAD_CHUNK_DELAY_MINUTES`: Minutes to wait between chunks for same symbol (default: `10`)
+- `DOWNLOAD_CHUNK_DELAY_SECONDS`: Seconds to wait between chunks for same symbol (default: `60`)
 
 #### API-Specific Configuration
 - `FLASK_ENV`: Flask environment (default: `production`)
@@ -239,7 +239,7 @@ export MAX_SYMBOLS_PER_RUN=100
 export RATE_LIMIT_DELAY_SECONDS=1.0
 export INITIAL_START_DATE=2015-01-01
 export DOWNLOAD_CHUNK_DAYS=365
-export DOWNLOAD_CHUNK_DELAY_MINUTES=10
+export DOWNLOAD_CHUNK_DELAY_SECONDS=30
 ```
 
 ### Kubernetes/Helm Configuration

@@ -97,8 +97,8 @@ spec:
               value: "2010-01-01"
             - name: DOWNLOAD_CHUNK_DAYS
               value: "365"
-            - name: DOWNLOAD_CHUNK_DELAY_MINUTES
-              value: "10"
+            - name: DOWNLOAD_CHUNK_DELAY_SECONDS
+              value: "5"
             - name: PORT
               value: "5001"
             - name: FLASK_ENV
