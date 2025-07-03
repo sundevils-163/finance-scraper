@@ -48,7 +48,9 @@ class SchedulerConfig:
     retry_delay_seconds: float = 5.0
     
     # Historical data configuration
-    initial_start_days_back: int = 365  # Days back to start when no historical data exists
+    initial_start_date: str = "2020-01-01"  # Initial start date (YYYY-MM-DD) when no historical data exists
+    download_chunk_days: int = 365  # Number of days to download per chunk
+    download_chunk_delay_minutes: int = 10  # Minutes to wait between chunks for same symbol
 
 class StockScheduler:
     """Main scheduler class for automated stock data retrieval"""
@@ -185,69 +187,109 @@ class StockScheduler:
             return False
     
     def update_historical_prices(self, symbol: str) -> bool:
-        """Update historical prices for a symbol"""
+        """Update historical prices for a symbol in chunks"""
         try:
             logger.info(f"Updating historical prices for {symbol}")
             
             # Get the last price date
             last_date = self.get_last_price_date(symbol)
-            start_date = None
+            current_start_date = None
             
             if last_date:
                 # Start from the day after the last price
-                start_date = last_date + timedelta(days=1)
+                current_start_date = last_date + timedelta(days=1)
             else:
                 # No previous data, use configured initial start date
-                start_date = datetime.utcnow() - timedelta(days=self.config.initial_start_days_back)
-                logger.info(f"No historical data found for {symbol}, starting from {start_date.strftime('%Y-%m-%d')} ({self.config.initial_start_days_back} days back)")
+                try:
+                    current_start_date = datetime.strptime(self.config.initial_start_date, '%Y-%m-%d')
+                    logger.info(f"No historical data found for {symbol}, starting from {self.config.initial_start_date}")
+                except ValueError as e:
+                    logger.error(f"Invalid initial start date format: {self.config.initial_start_date}. Expected YYYY-MM-DD. Using default 2020-01-01")
+                    current_start_date = datetime.strptime('2020-01-01', '%Y-%m-%d')
             
             end_date = datetime.utcnow()
             
             # Don't update if start_date is in the future
-            if start_date > end_date:
+            if current_start_date > end_date:
                 logger.info(f"No new data needed for {symbol}")
                 return True
             
-            # Get historical data from Yahoo Finance
             ticker = yf.Ticker(symbol)
-            hist = ticker.history(
-                start=start_date.strftime('%Y-%m-%d'),
-                end=end_date.strftime('%Y-%m-%d')
-            )
+            total_documents = 0
+            chunk_count = 0
             
-            if hist.empty:
-                logger.info(f"No new historical data for {symbol}")
-                return True
-            
-            # Convert to list of documents
-            documents = []
-            for date, row in hist.iterrows():
-                document = {
-                    'symbol': symbol.upper(),
-                    'date': date.to_pydatetime(),
-                    'open': float(row['Open']) if pd.notna(row['Open']) else None,
-                    'high': float(row['High']) if pd.notna(row['High']) else None,
-                    'low': float(row['Low']) if pd.notna(row['Low']) else None,
-                    'close': float(row['Close']) if pd.notna(row['Close']) else None,
-                    'volume': int(row['Volume']) if pd.notna(row['Volume']) else None,
-                    'adj_close': float(row['Adj Close']) if pd.notna(row['Adj Close']) else None,
-                    'source': 'yfinance'
-                }
-                documents.append(document)
-            
-            if documents:
-                # Use bulk operations for better performance
-                from pymongo import ReplaceOne
-                operations = [
-                    ReplaceOne(
-                        {'symbol': doc['symbol'], 'date': doc['date']},
-                        doc,
-                        upsert=True
-                    ) for doc in documents
-                ]
+            # Download data in chunks
+            while current_start_date < end_date and not self.stop_event.is_set():
+                chunk_count += 1
                 
-                result = self.prices_collection.bulk_write(operations)
-                logger.info(f"Updated {len(documents)} historical prices for {symbol}")
+                # Calculate chunk end date (current_start_date + chunk_days, but not beyond end_date)
+                chunk_end_date = min(
+                    current_start_date + timedelta(days=self.config.download_chunk_days),
+                    end_date
+                )
+                
+                logger.info(f"Downloading chunk {chunk_count} for {symbol}: {current_start_date.strftime('%Y-%m-%d')} to {chunk_end_date.strftime('%Y-%m-%d')}")
+                
+                # Get historical data for this chunk
+                hist = ticker.history(
+                    start=current_start_date.strftime('%Y-%m-%d'),
+                    end=chunk_end_date.strftime('%Y-%m-%d')
+                )
+                
+                if hist.empty:
+                    logger.info(f"No data for chunk {chunk_count} of {symbol}")
+                    # Move to next chunk
+                    current_start_date = chunk_end_date
+                    continue
+                
+                # Convert to list of documents
+                documents = []
+                for date, row in hist.iterrows():
+                    document = {
+                        'symbol': symbol.upper(),
+                        'date': date.to_pydatetime(),
+                        'open': float(row['Open']) if pd.notna(row['Open']) else None,
+                        'high': float(row['High']) if pd.notna(row['High']) else None,
+                        'low': float(row['Low']) if pd.notna(row['Low']) else None,
+                        'close': float(row['Close']) if pd.notna(row['Close']) else None,
+                        'volume': int(row['Volume']) if pd.notna(row['Volume']) else None,
+                        'adj_close': float(row['Adj Close']) if pd.notna(row['Adj Close']) else None,
+                        'source': 'yfinance'
+                    }
+                    documents.append(document)
+                
+                if documents:
+                    # Use bulk operations for better performance
+                    from pymongo import ReplaceOne
+                    operations = [
+                        ReplaceOne(
+                            {'symbol': doc['symbol'], 'date': doc['date']},
+                            doc,
+                            upsert=True
+                        ) for doc in documents
+                    ]
+                    
+                    result = self.prices_collection.bulk_write(operations)
+                    total_documents += len(documents)
+                    logger.info(f"Updated {len(documents)} historical prices for {symbol} (chunk {chunk_count})")
+                
+                # Move to next chunk
+                current_start_date = chunk_end_date
+                
+                # Wait between chunks (except for the last chunk)
+                if current_start_date < end_date:
+                    delay_minutes = self.config.download_chunk_delay_minutes
+                    logger.info(f"Waiting {delay_minutes} minutes before next chunk for {symbol}")
+                    
+                    # Wait in smaller intervals to allow for stop event
+                    for _ in range(delay_minutes * 60):
+                        if self.stop_event.is_set():
+                            logger.info(f"Stop event received, interrupting historical price update for {symbol}")
+                            return True
+                        time.sleep(1)
+            
+            if total_documents > 0:
+                logger.info(f"Completed historical price update for {symbol}: {total_documents} total documents in {chunk_count} chunks")
             
             return True
             
@@ -365,9 +407,6 @@ class StockScheduler:
 
 def create_scheduler_from_env() -> StockScheduler:
     """Create scheduler instance from environment variables"""
-    # Import scheduler config for scheduler-specific settings
-    from scheduler_config import get_scheduler_config
-    scheduler_config = get_scheduler_config()
     
     config = SchedulerConfig(
         # MongoDB configuration - use same as main app
@@ -378,15 +417,17 @@ def create_scheduler_from_env() -> StockScheduler:
         db_name=os.environ.get('MONGODB_DB', 'epicurus-stock-io'),
         collection_name=os.environ.get('MONGODB_COLLECTION', 'stock-info'),
         prices_collection_name=os.environ.get('MONGODB_PRICES_COLLECTION', 'stock-prices'),
-        # Scheduler-specific configuration
-        run_frequency_hours=scheduler_config['run_frequency_hours'],
-        symbol_frequency_hours=scheduler_config['symbol_frequency_hours'],
-        max_symbols_per_run=scheduler_config['max_symbols_per_run'],
-        rate_limit_delay_seconds=scheduler_config['rate_limit_delay_seconds'],
-        jitter_seconds=scheduler_config['jitter_seconds'],
-        max_retries=scheduler_config['max_retries'],
-        retry_delay_seconds=scheduler_config['retry_delay_seconds'],
-        initial_start_days_back=scheduler_config['initial_start_days_back']
+        # Scheduler-specific configuration from environment variables
+        run_frequency_hours=int(os.environ.get('SCHEDULER_FREQUENCY_HOURS', '24')),
+        symbol_frequency_hours=int(os.environ.get('SYMBOL_FREQUENCY_HOURS', '24')),
+        max_symbols_per_run=int(os.environ.get('MAX_SYMBOLS_PER_RUN', '50')),
+        rate_limit_delay_seconds=float(os.environ.get('RATE_LIMIT_DELAY_SECONDS', '1.0')),
+        jitter_seconds=float(os.environ.get('JITTER_SECONDS', '0.5')),
+        max_retries=int(os.environ.get('MAX_RETRIES', '3')),
+        retry_delay_seconds=float(os.environ.get('RETRY_DELAY_SECONDS', '5.0')),
+        initial_start_date=os.environ.get('INITIAL_START_DATE', '2020-01-01'),
+        download_chunk_days=int(os.environ.get('DOWNLOAD_CHUNK_DAYS', '365')),
+        download_chunk_delay_minutes=int(os.environ.get('DOWNLOAD_CHUNK_DELAY_MINUTES', '10'))
     )
     
     return StockScheduler(config)

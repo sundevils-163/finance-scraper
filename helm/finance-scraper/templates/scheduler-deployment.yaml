@@ -3,18 +3,15 @@ kind: Deployment
 metadata:
   name: {{ include "finance-scraper.fullname" . }}-scheduler
   labels:
-    {{- include "finance-scraper.labels" . | nindent 4 }}
     app.kubernetes.io/component: scheduler
 spec:
   replicas: {{ .Values.scheduler.replicaCount }}
   selector:
     matchLabels:
-      {{- include "finance-scraper.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: scheduler
   template:
     metadata:
       labels:
-        {{- include "finance-scraper.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: scheduler
       {{- with .Values.podAnnotations }}
       annotations:
@@ -55,12 +52,12 @@ spec:
             - name: MONGODB_URI
               valueFrom:
                 configMapKeyRef:
-                  name: {{ include "finance-scraper.fullname" . }}
+                  name: {{ include "finance-scraper.fullname" . }}-config
                   key: MONGODB_URI
             - name: AUTHENTICATION_SOURCE
               valueFrom:
                 configMapKeyRef:
-                  name: {{ include "finance-scraper.fullname" . }}
+                  name: {{ include "finance-scraper.fullname" . }}-config
                   key: AUTHENTICATION_SOURCE
             {{- end }}
             {{- if .Values.secret.enabled }}
@@ -68,14 +65,14 @@ spec:
             - name: MONGODB_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "finance-scraper.fullname" . }}
+                  name: {{ include "finance-scraper.fullname" . }}-secret
                   key: MONGODB_USERNAME
             {{- end }}
             {{- if .Values.secret.data.MONGODB_PASSWORD }}
             - name: MONGODB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "finance-scraper.fullname" . }}
+                  name: {{ include "finance-scraper.fullname" . }}-secret
                   key: MONGODB_PASSWORD
             {{- end }}
             {{- end }}
@@ -101,8 +98,12 @@ spec:
               value: "3"
             - name: RETRY_DELAY_SECONDS
               value: "5.0"
-            - name: INITIAL_START_DAYS_BACK
+            - name: INITIAL_START_DATE
+              value: "2010-01-01"
+            - name: DOWNLOAD_CHUNK_DAYS
               value: "365"
+            - name: DOWNLOAD_CHUNK_DELAY_MINUTES
+              value: "10"
             - name: PORT
               value: "5001"
             - name: FLASK_ENV

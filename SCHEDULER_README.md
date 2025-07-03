@@ -59,7 +59,9 @@ All environment variables are defined in a single `env` section in `values.yaml`
 - `JITTER_SECONDS`: Random jitter to avoid thundering herd (default: `0.5`)
 - `MAX_RETRIES`: Maximum retry attempts (default: `3`)
 - `RETRY_DELAY_SECONDS`: Delay between retries (default: `5.0`)
-- `INITIAL_START_DAYS_BACK`: Days back to start when no historical data exists (default: `365`)
+- `INITIAL_START_DATE`: Initial start date (YYYY-MM-DD) when no historical data exists (default: `2020-01-01`)
+- `DOWNLOAD_CHUNK_DAYS`: Number of days to download per chunk (default: `365`)
+- `DOWNLOAD_CHUNK_DELAY_MINUTES`: Minutes to wait between chunks for same symbol (default: `10`)
 
 #### API-Specific Configuration
 - `FLASK_ENV`: Flask environment (default: `production`)
@@ -235,7 +237,9 @@ export SCHEDULER_FREQUENCY_HOURS=24
 export SYMBOL_FREQUENCY_HOURS=24
 export MAX_SYMBOLS_PER_RUN=100
 export RATE_LIMIT_DELAY_SECONDS=1.0
-export INITIAL_START_DAYS_BACK=730
+export INITIAL_START_DATE=2015-01-01
+export DOWNLOAD_CHUNK_DAYS=365
+export DOWNLOAD_CHUNK_DELAY_MINUTES=10
 ```
 
 ### Kubernetes/Helm Configuration

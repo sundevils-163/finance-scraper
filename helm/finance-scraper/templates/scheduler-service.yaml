@@ -3,7 +3,6 @@ kind: Service
 metadata:
   name: {{ include "finance-scraper.fullname" . }}-scheduler
   labels:
-    {{- include "finance-scraper.labels" . | nindent 4 }}
     app.kubernetes.io/component: scheduler
 spec:
   type: ClusterIP
@@ -13,5 +12,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "finance-scraper.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: scheduler
