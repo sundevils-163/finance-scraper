@@ -246,12 +246,12 @@ class StockScheduler:
                     document = {
                         'symbol': symbol.upper(),
                         'date': date.to_pydatetime(),
-                        'open': float(row['Open']) if pd.notna(row['Open']) else None,
-                        'high': float(row['High']) if pd.notna(row['High']) else None,
-                        'low': float(row['Low']) if pd.notna(row['Low']) else None,
-                        'close': float(row['Close']) if pd.notna(row['Close']) else None,
+                        'open': round(float(row['Open']), 2) if pd.notna(row['Open']) else None,
+                        'high': round(float(row['High']), 2) if pd.notna(row['High']) else None,
+                        'low': round(float(row['Low']), 2) if pd.notna(row['Low']) else None,
+                        'close': round(float(row['Close']), 2) if pd.notna(row['Close']) else None,
                         'volume': int(row['Volume']) if pd.notna(row['Volume']) else None,
-                        'adj_close': float(row['Adj Close']) if pd.notna(row['Adj Close']) else None,
+                        'adj_close': round(float(row['Adj Close']), 2) if pd.notna(row['Adj Close']) else None,
                         'source': 'yfinance'
                     }
                     documents.append(document)
