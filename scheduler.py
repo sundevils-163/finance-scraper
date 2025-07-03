@@ -230,7 +230,8 @@ class StockScheduler:
                 # Get historical data for this chunk
                 hist = ticker.history(
                     start=current_start_date.strftime('%Y-%m-%d'),
-                    end=chunk_end_date.strftime('%Y-%m-%d')
+                    end=chunk_end_date.strftime('%Y-%m-%d'),
+                    auto_adjust=False
                 )
                 
                 if hist.empty:
