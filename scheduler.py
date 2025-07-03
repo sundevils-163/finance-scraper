@@ -135,16 +135,13 @@ class StockScheduler:
             return False
         
         try:
-            # Check when the symbol was last updated
-            symbol_data = self.collection.find_one({'symbol': symbol.upper()})
-            if not symbol_data or 'last_fetched' not in symbol_data:
+            # Check when the symbol was last updated by looking at the last price date
+            last_price_date = self.get_last_price_date(symbol)
+            if not last_price_date:
+                # No historical prices found, should update
                 return True
             
-            last_fetched = symbol_data['last_fetched']
-            if isinstance(last_fetched, str):
-                last_fetched = datetime.fromisoformat(last_fetched.replace('Z', '+00:00'))
-            
-            hours_since_update = (datetime.utcnow() - last_fetched).total_seconds() / 3600
+            hours_since_update = (datetime.utcnow() - last_price_date).total_seconds() / 3600
             return hours_since_update >= self.config.symbol_frequency_hours
         except Exception as e:
             logger.error(f"Error checking update status for {symbol}: {e}")

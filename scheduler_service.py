@@ -69,7 +69,9 @@ def scheduler_status():
             "symbol_frequency_hours": scheduler.config.symbol_frequency_hours,
             "max_symbols_per_run": scheduler.config.max_symbols_per_run,
             "rate_limit_delay_seconds": scheduler.config.rate_limit_delay_seconds,
-            "initial_start_days_back": scheduler.config.initial_start_days_back
+            "initial_start_date": scheduler.config.initial_start_date,
+            "download_chunk_days": scheduler.config.download_chunk_days,
+            "download_chunk_delay_minutes": scheduler.config.download_chunk_delay_minutes
         }
     }), 200
 
@@ -161,7 +163,9 @@ def get_config():
             "jitter_seconds": scheduler.config.jitter_seconds,
             "max_retries": scheduler.config.max_retries,
             "retry_delay_seconds": scheduler.config.retry_delay_seconds,
-            "initial_start_days_back": scheduler.config.initial_start_days_back
+            "initial_start_date": scheduler.config.initial_start_date,
+            "download_chunk_days": scheduler.config.download_chunk_days,
+            "download_chunk_delay_minutes": scheduler.config.download_chunk_delay_minutes
         }
     }), 200
 

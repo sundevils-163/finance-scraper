@@ -60,22 +60,17 @@ spec:
                   name: {{ include "finance-scraper.fullname" . }}-config
                   key: AUTHENTICATION_SOURCE
             {{- end }}
-            {{- if .Values.secret.enabled }}
-            {{- if .Values.secret.data.MONGODB_USERNAME }}
+            # MongoDB credentials from external secret
             - name: MONGODB_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: {{ include "finance-scraper.fullname" . }}-secret
                   key: MONGODB_USERNAME
-            {{- end }}
-            {{- if .Values.secret.data.MONGODB_PASSWORD }}
             - name: MONGODB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ include "finance-scraper.fullname" . }}-secret
                   key: MONGODB_PASSWORD
-            {{- end }}
-            {{- end }}
             # Use shared environment variables (excluding API-specific ones)
             {{- range .Values.env }}
             {{- if not (or (eq .name "FLASK_ENV") (eq .name "PORT")) }}
