@@ -13,6 +13,7 @@ import yfinance as yf
 from pymongo import MongoClient, ReplaceOne
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 import pandas as pd
+from functools import lru_cache
 
 # Configure logging
 logging.basicConfig(
@@ -22,6 +23,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Optimize Flask for production
+app.config['JSON_SORT_KEYS'] = False  # Reduce CPU usage for JSON serialization
+app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False  # Disable pretty printing
 
 # MongoDB configuration
 MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://mongodb.lan:27017/')
@@ -45,11 +50,16 @@ else:
 
 # Initialize MongoDB client
 try:
-    # Create MongoDB client with authentication source
+    # Create MongoDB client with authentication source and optimized settings
     mongo_client = MongoClient(
         MONGODB_URI, 
         serverSelectionTimeoutMS=5000,
-        authSource=AUTHENTICATION_SOURCE
+        authSource=AUTHENTICATION_SOURCE,
+        maxPoolSize=10,  # Limit connection pool
+        minPoolSize=1,   # Minimum connections
+        maxIdleTimeMS=30000,  # Close idle connections after 30 seconds
+        connectTimeoutMS=5000,  # Connection timeout
+        socketTimeoutMS=5000    # Socket timeout
     )
     # Test the connection
     mongo_client.admin.command('ping')
@@ -214,6 +224,7 @@ def save_historical_prices_to_database(symbol: str, prices_data: List[Dict[str, 
 
 def get_stock_data_from_yahoo(symbol: str) -> Optional[Dict[str, Any]]:
     """Retrieve stock data from yfinance"""
+    ticker = None
     try:
         ticker = yf.Ticker(symbol.upper())
         info = ticker.info
@@ -227,9 +238,15 @@ def get_stock_data_from_yahoo(symbol: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error fetching data for {symbol}: {str(e)}")
         return None
+    finally:
+        # Clean up ticker object to free memory
+        if ticker:
+            del ticker
 
 def get_historical_prices_from_yahoo(symbol: str, start_date: str, end_date: str) -> Optional[List[Dict[str, Any]]]:
     """Retrieve historical prices from yfinance"""
+    ticker = None
+    hist = None
     try:
         ticker = yf.Ticker(symbol.upper())
         
@@ -259,6 +276,15 @@ def get_historical_prices_from_yahoo(symbol: str, start_date: str, end_date: str
     except Exception as e:
         logger.error(f"Error fetching historical data for {symbol}: {str(e)}")
         return None
+    finally:
+        # Clean up objects to free memory
+        if hist is not None:
+            del hist
+        if ticker is not None:
+            del ticker
+        # Force garbage collection
+        import gc
+        gc.collect()
 
 def get_stock_data(symbol: str) -> Optional[Dict[str, Any]]:
     """Get stock data with MongoDB storage"""
@@ -296,15 +322,86 @@ def get_historical_prices(symbol: str, start_date: str, end_date: str) -> Option
     
     return None
 
+# Simple cache for health check responses
+_health_cache = {"response": None, "timestamp": None, "ttl": 30}  # 30 second TTL
+
 @app.route('/health')
 def health_check():
-    """Health check endpoint"""
+    """Health check endpoint - lightweight version for probes with caching"""
+    current_time = datetime.utcnow()
+    
+    # Return cached response if still valid
+    if (_health_cache["response"] and _health_cache["timestamp"] and 
+        (current_time - _health_cache["timestamp"]).total_seconds() < _health_cache["ttl"]):
+        return _health_cache["response"]
+    
+    # Create new response
+    response = jsonify({
+        "status": "healthy",
+        "service": "finance-scraper-api"
+    }), 200
+    
+    # Cache the response
+    _health_cache["response"] = response
+    _health_cache["timestamp"] = current_time
+    
+    return response
+
+@app.route('/health/detailed')
+def detailed_health_check():
+    """Detailed health check endpoint with MongoDB status"""
     mongodb_status = "connected" if MONGODB_AVAILABLE else "disconnected"
+    
+    # Get memory usage information
+    import psutil
+    import os
+    process = psutil.Process(os.getpid())
+    memory_info = process.memory_info()
+    
     return jsonify({
         "status": "healthy",
         "service": "finance-scraper-api",
-        "mongodb": mongodb_status
+        "mongodb": mongodb_status,
+        "memory": {
+            "rss_mb": round(memory_info.rss / 1024 / 1024, 2),
+            "vms_mb": round(memory_info.vms / 1024 / 1024, 2),
+            "percent": round(process.memory_percent(), 2)
+        }
     }), 200
+
+@app.route('/health/memory-cleanup', methods=['POST'])
+def memory_cleanup():
+    """Force garbage collection to free memory"""
+    try:
+        import gc
+        import psutil
+        import os
+        
+        # Get memory before cleanup
+        process = psutil.Process(os.getpid())
+        memory_before = process.memory_info().rss / 1024 / 1024
+        
+        # Force garbage collection
+        collected = gc.collect()
+        
+        # Get memory after cleanup
+        memory_after = process.memory_info().rss / 1024 / 1024
+        memory_freed = memory_before - memory_after
+        
+        return jsonify({
+            "status": "success",
+            "message": "Memory cleanup completed",
+            "garbage_collected": collected,
+            "memory_freed_mb": round(memory_freed, 2),
+            "memory_before_mb": round(memory_before, 2),
+            "memory_after_mb": round(memory_after, 2)
+        }), 200
+    except Exception as e:
+        logger.error(f"Error during memory cleanup: {e}")
+        return jsonify({
+            "error": "Memory cleanup failed",
+            "message": str(e)
+        }), 500
 
 @app.route('/stock/<symbol>')
 def get_stock_info(symbol: str):
@@ -429,6 +526,16 @@ def get_historical_prices_endpoint(symbol: str):
                 "end_date": end_date
             }), 400
         
+        # Check date range size to prevent memory issues (max 5 years)
+        days_diff = (end_dt - start_dt).days
+        if days_diff > 1825:  # 5 years
+            return jsonify({
+                "error": "Date range too large",
+                "max_days": 1825,
+                "requested_days": days_diff,
+                "suggestion": "Please request smaller date ranges"
+            }), 400
+        
         logger.info(f"Fetching historical prices for {symbol} from {start_date} to {end_date}")
         
         # Get historical prices (with database storage)
@@ -441,6 +548,10 @@ def get_historical_prices_endpoint(symbol: str):
                 "start_date": start_date,
                 "end_date": end_date
             }), 404
+        
+        # Check result size to prevent memory issues
+        if len(prices_data) > 10000:  # Max 10,000 price records
+            logger.warning(f"Large dataset returned for {symbol}: {len(prices_data)} records")
         
         return jsonify({
             "symbol": symbol.upper(),
@@ -663,6 +774,13 @@ def internal_error(error):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
+    
+    # Enable garbage collection for memory management
+    import gc
+    gc.enable()
+    
+    # Set garbage collection thresholds for better memory management
+    gc.set_threshold(700, 10, 10)  # More aggressive collection
     
     # Initialize scheduler if enabled
     if os.environ.get('ENABLE_SCHEDULER', 'false').lower() == 'true':
