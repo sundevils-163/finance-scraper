@@ -7,6 +7,7 @@ A Flask-based API for retrieving stock information using Yahoo Finance (yfinance
 - **Stock Information**: Retrieve comprehensive stock data for any symbol
 - **Current Price**: Get current stock price and basic market data
 - **Historical Prices**: Retrieve historical price data with date range filtering
+- **Market Information**: Get market status and major indices (Dow Jones, NASDAQ, S&P 500)
 - **MongoDB Storage**: Persistent storage of stock data and historical prices
 - **Database Management**: Clear specific symbols or all data from database
 - **Health Monitoring**: Health check endpoint for monitoring
@@ -76,6 +77,151 @@ curl "http://localhost:5000/stock/AAPL/history?start_date=2024-01-01&end_date=20
       "Adj Close": 185.14
     }
   ]
+}
+```
+
+### Market Information
+
+#### General Market Information
+```
+GET /market
+```
+Retrieves comprehensive market information including market status and major indices (Dow Jones, NASDAQ, S&P 500).
+
+**Example:**
+```bash
+curl http://localhost:5000/market
+```
+
+**Response:**
+```json
+{
+  "market_status": {
+    "status": "open",
+    "market_state": "REGULAR",
+    "timestamp": "2024-01-15T14:30:00Z"
+  },
+  "indices": {
+    "dow_jones": {
+      "symbol": "^DJI",
+      "name": "Dow Jones Industrial Average",
+      "current_price": 37592.98,
+      "previous_close": 37592.98,
+      "open": 37592.98,
+      "day_high": 37592.98,
+      "day_low": 37592.98,
+      "volume": 0,
+      "currency": "USD",
+      "regular_market_state": "REGULAR",
+      "timestamp": "2024-01-15T14:30:00Z"
+    },
+    "nasdaq": {
+      "symbol": "^IXIC",
+      "name": "NASDAQ Composite",
+      "current_price": 14972.76,
+      "previous_close": 14972.76,
+      "open": 14972.76,
+      "day_high": 14972.76,
+      "day_low": 14972.76,
+      "volume": 0,
+      "currency": "USD",
+      "regular_market_state": "REGULAR",
+      "timestamp": "2024-01-15T14:30:00Z"
+    },
+    "sp500": {
+      "symbol": "^GSPC",
+      "name": "S&P 500",
+      "current_price": 4783.83,
+      "previous_close": 4783.83,
+      "open": 4783.83,
+      "day_high": 4783.83,
+      "day_low": 4783.83,
+      "volume": 0,
+      "currency": "USD",
+      "regular_market_state": "REGULAR",
+      "timestamp": "2024-01-15T14:30:00Z"
+    }
+  },
+  "timestamp": "2024-01-15T14:30:00Z"
+}
+```
+
+#### Market Status Only
+```
+GET /market/status
+```
+Retrieves only the current market status (open/closed/pre-market/after-hours).
+
+**Example:**
+```bash
+curl http://localhost:5000/market/status
+```
+
+**Response:**
+```json
+{
+  "status": "open",
+  "market_state": "REGULAR",
+  "timestamp": "2024-01-15T14:30:00Z"
+}
+```
+
+#### Market Indices Only
+```
+GET /market/indices
+```
+Retrieves only the major indices data (Dow Jones, NASDAQ, S&P 500).
+
+**Example:**
+```bash
+curl http://localhost:5000/market/indices
+```
+
+**Response:**
+```json
+{
+  "indices": {
+    "dow_jones": {
+      "symbol": "^DJI",
+      "name": "Dow Jones Industrial Average",
+      "current_price": 37592.98,
+      "previous_close": 37592.98,
+      "open": 37592.98,
+      "day_high": 37592.98,
+      "day_low": 37592.98,
+      "volume": 0,
+      "currency": "USD",
+      "regular_market_state": "REGULAR",
+      "timestamp": "2024-01-15T14:30:00Z"
+    },
+    "nasdaq": {
+      "symbol": "^IXIC",
+      "name": "NASDAQ Composite",
+      "current_price": 14972.76,
+      "previous_close": 14972.76,
+      "open": 14972.76,
+      "day_high": 14972.76,
+      "day_low": 14972.76,
+      "volume": 0,
+      "currency": "USD",
+      "regular_market_state": "REGULAR",
+      "timestamp": "2024-01-15T14:30:00Z"
+    },
+    "sp500": {
+      "symbol": "^GSPC",
+      "name": "S&P 500",
+      "current_price": 4783.83,
+      "previous_close": 4783.83,
+      "open": 4783.83,
+      "day_high": 4783.83,
+      "day_low": 4783.83,
+      "volume": 0,
+      "currency": "USD",
+      "regular_market_state": "REGULAR",
+      "timestamp": "2024-01-15T14:30:00Z"
+    }
+  },
+  "timestamp": "2024-01-15T14:30:00Z"
 }
 ```
 

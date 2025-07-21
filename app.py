@@ -322,6 +322,112 @@ def get_historical_prices(symbol: str, start_date: str, end_date: str) -> Option
     
     return None
 
+def get_market_status() -> Dict[str, Any]:
+    """Get current market status (open/closed)"""
+    try:
+        # Use a major index to determine market status
+        # S&P 500 is a good indicator for US market status
+        sp500 = yf.Ticker("^GSPC")
+        info = sp500.info
+        
+        # Check if market is open based on regularMarketState
+        market_state = info.get('regularMarketState', 'unknown')
+        
+        # Map market states to our format
+        if market_state == 'REGULAR':
+            status = 'open'
+        elif market_state in ['PRE', 'PREPRE']:
+            status = 'pre_market'
+        elif market_state in ['POST', 'POSTPOST']:
+            status = 'after_hours'
+        elif market_state == 'CLOSED':
+            status = 'closed'
+        else:
+            status = 'unknown'
+        
+        return {
+            'status': status,
+            'market_state': market_state,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting market status: {e}")
+        return {
+            'status': 'unknown',
+            'market_state': 'unknown',
+            'timestamp': datetime.utcnow().isoformat(),
+            'error': str(e)
+        }
+
+def get_index_data(symbol: str) -> Optional[Dict[str, Any]]:
+    """Get index data for a specific symbol"""
+    ticker = None
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        
+        # Extract relevant index information
+        index_data = {
+            'symbol': symbol,
+            'name': info.get('longName', info.get('shortName', symbol)),
+            'current_price': info.get('currentPrice'),
+            'previous_close': info.get('previousClose'),
+            'open': info.get('open'),
+            'day_high': info.get('dayHigh'),
+            'day_low': info.get('dayLow'),
+            'volume': info.get('volume'),
+            'market_cap': info.get('marketCap'),
+            'currency': info.get('currency', 'USD'),
+            'regular_market_state': info.get('regularMarketState'),
+            'regular_market_time': info.get('regularMarketTime'),
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+        return index_data
+    except Exception as e:
+        logger.error(f"Error fetching index data for {symbol}: {str(e)}")
+        return None
+    finally:
+        # Clean up ticker object to free memory
+        if ticker:
+            del ticker
+
+def get_market_information() -> Dict[str, Any]:
+    """Get comprehensive market information including major indices"""
+    try:
+        # Get market status
+        market_status = get_market_status()
+        
+        # Define major indices
+        indices = {
+            'dow_jones': '^DJI',
+            'nasdaq': '^IXIC', 
+            'sp500': '^GSPC'
+        }
+        
+        # Get data for each index
+        index_data = {}
+        for index_name, symbol in indices.items():
+            data = get_index_data(symbol)
+            if data:
+                index_data[index_name] = data
+        
+        # Compile market information
+        market_info = {
+            'market_status': market_status,
+            'indices': index_data,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+        return market_info
+    except Exception as e:
+        logger.error(f"Error getting market information: {e}")
+        return {
+            'error': 'Failed to retrieve market information',
+            'message': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }
+
 # Simple cache for health check responses
 _health_cache = {"response": None, "timestamp": None, "ttl": 30}  # 30 second TTL
 
@@ -568,6 +674,77 @@ def get_historical_prices_endpoint(symbol: str):
             "symbol": symbol
         }), 500
 
+@app.route('/market')
+def get_market_info():
+    """Get general market information including major indices"""
+    try:
+        logger.info("Fetching market information")
+        
+        # Get comprehensive market information
+        market_info = get_market_information()
+        
+        if 'error' in market_info:
+            return jsonify(market_info), 500
+        
+        return jsonify(market_info), 200
+        
+    except Exception as e:
+        logger.error(f"Unexpected error processing market information request: {str(e)}")
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e)
+        }), 500
+
+@app.route('/market/status')
+def get_market_status_endpoint():
+    """Get current market status only"""
+    try:
+        logger.info("Fetching market status")
+        
+        # Get market status
+        market_status = get_market_status()
+        
+        return jsonify(market_status), 200
+        
+    except Exception as e:
+        logger.error(f"Unexpected error processing market status request: {str(e)}")
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e)
+        }), 500
+
+@app.route('/market/indices')
+def get_market_indices():
+    """Get major indices data only"""
+    try:
+        logger.info("Fetching market indices")
+        
+        # Define major indices
+        indices = {
+            'dow_jones': '^DJI',
+            'nasdaq': '^IXIC', 
+            'sp500': '^GSPC'
+        }
+        
+        # Get data for each index
+        index_data = {}
+        for index_name, symbol in indices.items():
+            data = get_index_data(symbol)
+            if data:
+                index_data[index_name] = data
+        
+        return jsonify({
+            'indices': index_data,
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Unexpected error processing market indices request: {str(e)}")
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e)
+        }), 500
+
 @app.route('/database/clear/<symbol>')
 def clear_database_entry(symbol: str):
     """Remove a specific symbol from the database"""
@@ -754,6 +931,9 @@ def not_found(error):
             "/stock/<symbol>",
             "/stock/<symbol>/price",
             "/stock/<symbol>/history?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD",
+            "/market",
+            "/market/status",
+            "/market/indices",
             "/database/clear/<symbol>",
             "/database/clear",
             "/database/stats",
