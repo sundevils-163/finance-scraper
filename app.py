@@ -327,11 +327,11 @@ def get_market_status() -> Dict[str, Any]:
     try:
         # Use a major index to determine market status
         # S&P 500 is a good indicator for US market status
-        sp500 = yf.Ticker("^GSPC")
+        sp500 = yf.Ticker("SPY")
         info = sp500.info
         
         # Check if market is open based on regularMarketState
-        market_state = info.get('regularMarketState', 'unknown')
+        market_state = info.get('marketState', 'unknown')
         
         # Map market states to our format
         if market_state == 'REGULAR':
@@ -370,15 +370,14 @@ def get_index_data(symbol: str) -> Optional[Dict[str, Any]]:
         index_data = {
             'symbol': symbol,
             'name': info.get('longName', info.get('shortName', symbol)),
-            'current_price': info.get('currentPrice'),
+            'current_price': info.get('regularMarketPrice'),
             'previous_close': info.get('previousClose'),
             'open': info.get('open'),
             'day_high': info.get('dayHigh'),
             'day_low': info.get('dayLow'),
             'volume': info.get('volume'),
-            'market_cap': info.get('marketCap'),
             'currency': info.get('currency', 'USD'),
-            'regular_market_state': info.get('regularMarketState'),
+            'regular_market_state': info.get('marketState'),
             'regular_market_time': info.get('regularMarketTime'),
             'timestamp': datetime.utcnow().isoformat()
         }
